@@ -172,7 +172,7 @@ export default function Answer() {
   const [aiResponses, setAiResponses] = useState([]);
   const [expandedAiId, setExpandedAiId] = useState(null);
   const [expandedAiIds, setExpandedAiIds] = useState(() => new Set());
-  const [showAllQuestions, setShowAllQuestions] = useState(false);
+  const [showAllQuestions ] = useState(false);
 
   const toggleAiExpand = (id) => {
     setExpandedAiIds((prev) => {

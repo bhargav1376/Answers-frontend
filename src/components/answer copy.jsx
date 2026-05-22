@@ -11,7 +11,7 @@ import {
   postComment,
   saveAnswer,
 } from './api';
-import { AiChatButton, AiChatModal, AiModePanel, QuestionAiResponses } from './ai';
+import { AiChatButton, AiChatModal, AiModePanel, QuestionAiResponses } from './ai-chat';
 
 const NAME_KEY = 'answer_sheet_user_name';
 

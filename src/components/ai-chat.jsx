@@ -202,7 +202,7 @@ export function AiChatModal({
     <div className="modal-overlay ai-overlay" onClick={handleClose} role="presentation">
       <div className="modal-card ai-modal" onClick={(e) => e.stopPropagation()} role="dialog">
         <h2>AI Chat</h2>
-        {/* <p className="ai-modal-sub">DeepAI · {getDeepAIUrl()}</p> */}
+        <p className="ai-modal-sub">DeepAI · {getDeepAIUrl()}</p>
         {error && <div className="modal-error">{error}</div>}
 
         {step === 1 && (

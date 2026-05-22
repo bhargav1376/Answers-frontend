@@ -30,7 +30,7 @@
 
 .ai-select,
 .ai-modal label textarea {
-  width: 100%;
+  width: 95%;
   margin-bottom: 0.85rem;
   padding: 10px 12px;
   border: 1px solid #2a3848;
@@ -38,6 +38,7 @@
   background: #0c1014;
   color: #e8eaed;
   font-family: inherit;
+  margin-top: 10px;
 }
 
 .ai-modal label {

@@ -1,4 +1,4 @@
-const API = process.env.REACT_APP_API_URL || 'http://localhost:3030';
+const API = process.env.REACT_APP_API_URL || 'https://answer-backend.vercel.app';
 
 export async function fetchJson(path, options) {
   const res = await fetch(`${API}${path}`, {

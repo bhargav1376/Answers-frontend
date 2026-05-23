@@ -1,4 +1,4 @@
-const API = process.env.REACT_APP_API_URL || 'https://answer-backend.vercel.app';
+const API = process.env.REACT_APP_API_URL || 'http://localhost:3030';
 
 export async function fetchJson(path, options) {
   const res = await fetch(`${API}${path}`, {
@@ -28,3 +28,5 @@ export const deleteAllData = (body) =>
 export const getAiResponses = () => fetchJson('/api/ai/responses');
 export const saveAiResponse = (body) =>
   fetchJson('/api/ai/responses', { method: 'POST', body: JSON.stringify(body) });
+export const callOpenAI = (body) =>
+  fetchJson('/api/ai/call', { method: 'POST', body: JSON.stringify(body) });

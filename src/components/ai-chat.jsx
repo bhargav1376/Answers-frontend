@@ -1,23 +1,6 @@
 import { useEffect, useState } from 'react';
 import './ai.css';
-import { getAiResponses, saveAiResponse } from './api';
-
-export function getDeepAIUrl() {
-  const configured = (process.env.REACT_APP_DEEPAI_URL ?? '').trim();
-  if (configured.startsWith('http://') || configured.startsWith('https://')) {
-    return configured;
-  }
-  if (configured.startsWith('/')) {
-    return configured;
-  }
-  if (process.env.NODE_ENV === 'production') {
-    return 'https://api.deepai.org/hacking_is_a_serious_crime';
-  }
-  return '/hacking_is_a_serious_crime';
-}
-
-const API_KEY = (process.env.REACT_APP_DEEPAI_API_KEY ?? '').trim();
-const DEEPAI_URL = getDeepAIUrl();
+import { getAiResponses, saveAiResponse, callOpenAI } from './api';
 
 export function formatQuestionLabel(number, text) {
   const cleaned = (text || '')
@@ -53,60 +36,6 @@ function parseAiResponse(raw) {
   };
 }
 
-export async function callDeepAI({ questionText, sheetOption, sheetExplanation }) {
-  if (!API_KEY || !DEEPAI_URL) {
-    throw new Error(
-      'Missing DeepAI config — add REACT_APP_DEEPAI_API_KEY and REACT_APP_DEEPAI_URL to answer-frontend/.env, then restart npm start'
-    );
-  }
-
-  const userMessage = [
-    questionText.trim(),
-    sheetOption ? `Saved option on sheet: ${sheetOption}` : '',
-    sheetExplanation ? `Saved explanation on sheet: ${sheetExplanation}` : '',
-    '',
-    'Summarize and give the best answer. Reply exactly:',
-    'ANSWER: [the correct answer — not just option number, full answer text]',
-    'EXPLANATION: [clear explanation]',
-  ]
-    .filter((line) => line !== '')
-    .join('\n');
-
-  const formData = new FormData();
-  formData.append('chat_style', 'ai-code');
-  formData.append(
-    'chatHistory',
-    JSON.stringify([{ role: 'user', content: userMessage }])
-  );
-  formData.append('model', 'standard');
-  formData.append('session_uuid', crypto.randomUUID());
-  formData.append('sensitivity_request_id', crypto.randomUUID());
-  formData.append('hacker_is_stinky', 'very_stinky');
-  formData.append('enabled_tools', '["image_generator","image_editor"]');
-
-  const response = await fetch(DEEPAI_URL, {
-    method: 'POST',
-    headers: { accept: '*/*', 'api-key': API_KEY },
-    body: formData,
-  });
-
-  const resText = await response.text();
-  if (!response.ok) {
-    throw new Error(
-      response.status === 401
-        ? 'Unauthorized — check your DeepAI api-key'
-        : `DeepAI request failed (${response.status})`
-    );
-  }
-
-  try {
-    const resJson = JSON.parse(resText);
-    return String(resJson.output || resJson.text || resText).trim();
-  } catch {
-    return resText.trim();
-  }
-}
-
 export function AiChatButton({ onClick }) {
   return (
     <button type="button" className="btn-ai-chat" onClick={onClick}>
@@ -129,6 +58,8 @@ export function AiChatModal({
   const [questionPrompt, setQuestionPrompt] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [images, setImages] = useState([]);
+  const [lightboxImg, setLightboxImg] = useState(null);
 
   if (!open) return null;
 
@@ -141,6 +72,7 @@ export function AiChatModal({
     setStep(1);
     setQuestionNumber('');
     setQuestionPrompt('');
+    setImages([]);
     setError('');
   };
 
@@ -165,11 +97,13 @@ export function AiChatModal({
     setLoading(true);
     setError('');
     try {
-      const raw = await callDeepAI({
+      const rawData = await callOpenAI({
         questionText: questionPrompt.trim(),
         sheetOption: saved?.answer_text || '',
         sheetExplanation: lastComment?.comment_text || '',
+        images: images,
       });
+      const raw = rawData.text || '';
       const parsed = parseAiResponse(raw);
 
       const existing = await getAiResponses().catch(() => []);
@@ -186,6 +120,7 @@ export function AiChatModal({
         ai_option: parsed.ai_option,
         ai_explanation: parsed.ai_explanation,
         raw_response: parsed.raw_response,
+        images: images,
       });
 
       reset();
@@ -202,8 +137,15 @@ export function AiChatModal({
     <div className="modal-overlay ai-overlay" onClick={handleClose} role="presentation">
       <div className="modal-card ai-modal" onClick={(e) => e.stopPropagation()} role="dialog">
         <h2>AI Chat</h2>
-        <p className="ai-modal-sub">DeepAI · {getDeepAIUrl()}</p>
+        <p className="ai-modal-sub">ChatGPT (GPT-5.4-mini)</p>
         {error && <div className="modal-error">{error}</div>}
+        
+        {lightboxImg && (
+          <div className="ai-lightbox" onClick={() => setLightboxImg(null)}>
+            <img src={lightboxImg} alt="Enlarged" onClick={(e) => e.stopPropagation()} />
+            <button className="ai-lightbox-close" onClick={() => setLightboxImg(null)}>&times;</button>
+          </div>
+        )}
 
         {step === 1 && (
           <>
@@ -249,10 +191,37 @@ export function AiChatModal({
                 rows={4}
                 value={questionPrompt}
                 onChange={(e) => setQuestionPrompt(e.target.value)}
-                placeholder="Type your question here..."
+                onPaste={(e) => {
+                  const items = e.clipboardData?.items;
+                  if (!items) return;
+                  for (let i = 0; i < items.length; i++) {
+                    if (items[i].type.indexOf('image') !== -1) {
+                      const file = items[i].getAsFile();
+                      const reader = new FileReader();
+                      reader.onload = (ev) => {
+                        setImages((prev) => {
+                          if (prev.length >= 4) return prev;
+                          return [...prev, ev.target.result];
+                        });
+                      };
+                      reader.readAsDataURL(file);
+                    }
+                  }
+                }}
+                placeholder="Type your question here or paste an image..."
                 autoFocus
               />
             </label>
+            {images.length > 0 && (
+              <div className="ai-image-previews">
+                {images.map((img, idx) => (
+                  <div key={idx} className="ai-image-preview">
+                    <img src={img} alt={`Preview ${idx}`} onClick={() => setLightboxImg(img)} />
+                    <button type="button" onClick={() => setImages((prev) => prev.filter((_, i) => i !== idx))}>&times;</button>
+                  </div>
+                ))}
+              </div>
+            )}
             {(saved?.answer_text || lastComment?.comment_text) && (
               <p className="ai-sheet-hint">
                 Sheet: option <strong>{saved?.answer_text || '—'}</strong>
@@ -281,11 +250,19 @@ export function AiChatModal({
   );
 }
 
-function AiResponseBody({ item, questions }) {
+function AiResponseBody({ item, questions, onImageClick }) {
   const q = questions.find((x) => x.number === item.question_number);
   const title = q
     ? formatQuestionLabel(item.question_number, q.text)
     : `Q${item.question_number} — Option & explanation`;
+
+  let imagesArray = [];
+  try {
+    if (item.images) {
+      const parsed = typeof item.images === 'string' ? JSON.parse(item.images) : item.images;
+      if (Array.isArray(parsed)) imagesArray = parsed;
+    }
+  } catch (e) {}
 
   return (
     <>
@@ -293,6 +270,18 @@ function AiResponseBody({ item, questions }) {
       <p className="ai-asked-line">
         <span className="ai-key">Question asked</span> — {item.question_prompt}
       </p>
+      {imagesArray.length > 0 && (
+        <div className="ai-response-images">
+          {imagesArray.map((img, idx) => (
+            <img 
+              key={idx} 
+              src={img} 
+              alt={`Input ${idx}`} 
+              onClick={() => onImageClick && onImageClick(img)} 
+            />
+          ))}
+        </div>
+      )}
       {(item.sheet_option || item.sheet_explanation) && (
         <p className="ai-sheet-line">
           Sheet — option <strong>{item.sheet_option || '—'}</strong>
@@ -334,6 +323,8 @@ export function QuestionAiResponses({
   expandedIds,
   onToggle,
 }) {
+  const [lightboxImg, setLightboxImg] = useState(null);
+
   const forQ = responses
     .filter((r) => r.question_number === questionNumber)
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
@@ -342,6 +333,12 @@ export function QuestionAiResponses({
 
   return (
     <div className="q-ai-section">
+      {lightboxImg && (
+        <div className="ai-lightbox" onClick={() => setLightboxImg(null)}>
+          <img src={lightboxImg} alt="Enlarged" onClick={(e) => e.stopPropagation()} />
+          <button className="ai-lightbox-close" onClick={() => setLightboxImg(null)}>&times;</button>
+        </div>
+      )}
       <p className="q-ai-section-label">
         AI responses for Q{questionNumber} ({forQ.length})
       </p>
@@ -355,7 +352,7 @@ export function QuestionAiResponses({
           />
           {expandedIds.has(item.id) && (
             <div className="ai-response-body">
-              <AiResponseBody item={item} questions={questions} />
+              <AiResponseBody item={item} questions={questions} onImageClick={setLightboxImg} />
             </div>
           )}
         </div>
@@ -370,7 +367,7 @@ function AiResponseCard({ item, questions, expanded, onToggle }) {
       <AiResponseToggle item={item} expanded={expanded} onToggle={onToggle} />
       {expanded && (
         <div className="ai-response-body">
-          <AiResponseBody item={item} questions={questions} />
+          <AiResponseBody item={item} questions={questions} onImageClick={item.onImageClick} />
         </div>
       )}
     </li>
@@ -382,6 +379,7 @@ export function AiModePanel({ responses, questions, expandedId, onToggle }) {
     (a, b) => new Date(b.created_at) - new Date(a.created_at)
   );
   const [viewIndex, setViewIndex] = useState(0);
+  const [lightboxImg, setLightboxImg] = useState(null);
 
   useEffect(() => {
     if (!expandedId || responses.length === 0) return;
@@ -402,6 +400,13 @@ export function AiModePanel({ responses, questions, expandedId, onToggle }) {
   return (
 <aside className="answer-side ai-side">
   <h2>AI mode</h2>
+  
+  {lightboxImg && (
+    <div className="ai-lightbox" onClick={() => setLightboxImg(null)}>
+      <img src={lightboxImg} alt="Enlarged" onClick={(e) => e.stopPropagation()} />
+      <button className="ai-lightbox-close" onClick={() => setLightboxImg(null)}>&times;</button>
+    </div>
+  )}
 
   {sorted.length === 0 ? (
     <p className="empty">No AI searches yet</p>
@@ -416,7 +421,7 @@ export function AiModePanel({ responses, questions, expandedId, onToggle }) {
         {sorted.map((item) => (
           <AiResponseCard
             key={item.id}
-            item={item}
+            item={{...item, onImageClick: setLightboxImg}}
             questions={questions}
             expanded={expandedId === item.id}
             onToggle={() =>

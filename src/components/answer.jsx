@@ -156,7 +156,7 @@ function UpdateItem({ item }) {
   );
 }
 
-export default function Answer() {
+export default function Answer({ onNavCode }) {
   const [userName, setUserName] = useState(() => localStorage.getItem(NAME_KEY) || '');
   const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState([]);
@@ -351,6 +351,9 @@ export default function Answer() {
         <span className="answer-user">
           Hi, <strong>{userName}</strong>
         </span>
+        <button type="button" className="btn-ghost" onClick={onNavCode}>
+          Code
+        </button>
         <AiChatButton onClick={() => setAiOpen(true)} />
         <button
           type="button"

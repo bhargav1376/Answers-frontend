@@ -1,0 +1,143 @@
+.code-app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #0c1014;
+  color: #e8eaed;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}
+
+.code-sin {
+  color: #fff;
+  font-size: 1rem;
+  font-weight: bold;
+}
+
+.code-body {
+  padding: 80px 20px 20px 20px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.code-form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin-bottom: 40px;
+}
+
+.code-input-name {
+  width: 97.5%;
+  padding: 12px 15px;
+  font-size: 1rem;
+  background-color: #0c1014;
+  color: #e8eaed;
+  border: 1px solid #2a3848;
+  border-radius: 12px;
+}
+
+.code-input-name:focus {
+  outline: none;
+  border-color: #a78bfa;
+}
+
+.code-editor-container {
+  display: flex;
+  min-height: 300px;
+}
+
+.code-textarea {
+  flex: 1;
+  width: 100%;
+  padding: 15px;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 14px;
+  line-height: 1.5;
+  background-color: #0c1014;
+  color: #e8eaed;
+  border: 1px solid #2a3848;
+  border-radius: 12px;
+  resize: vertical;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+}
+
+.code-textarea:focus {
+  outline: none;
+  border-color: #a78bfa;
+}
+
+.code-list-section {
+  border-top: 1px solid #2a3848;
+  padding-top: 30px;
+  margin-bottom: 50px;
+}
+
+.code-list-title {
+  margin-bottom: 20px;
+  font-size: 1.5rem;
+  color: #fff;
+}
+
+.code-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.code-list-item {
+  background-color: #151c24;
+  border: 1px solid #243040;
+  border-radius: 16px;
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+
+.code-list-item:hover {
+  border-color: #3a5068;
+}
+
+.code-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 20px;
+  background-color: #111820;
+  border-bottom: 1px solid #243040;
+}
+
+.code-list-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  background: linear-gradient(90deg, #5eb3ff, #a78bfa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.code-list-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.code-display {
+  margin: 0;
+  padding: 15px 20px;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #b8c5d4;
+  background-color: #0c1014;
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 400px;
+  white-space: pre;
+}

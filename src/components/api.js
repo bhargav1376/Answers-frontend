@@ -30,3 +30,10 @@ export const saveAiResponse = (body) =>
   fetchJson('/api/ai/responses', { method: 'POST', body: JSON.stringify(body) });
 export const callOpenAI = (body) =>
   fetchJson('/api/ai/call', { method: 'POST', body: JSON.stringify(body) });
+export const getCode = () => fetchJson('/api/code');
+export const saveCode = (body) =>
+  fetchJson('/api/code', { method: 'POST', body: JSON.stringify(body) });
+export const deleteCode = (id) =>
+  fetchJson(`/api/code/${id}`, { method: 'DELETE' });
+export const verifyAdmin = (body) =>
+  fetchJson('/api/admin/verify', { method: 'POST', body: JSON.stringify(body) });

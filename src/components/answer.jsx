@@ -10,6 +10,8 @@ import {
   deleteAllData,
   postComment,
   saveAnswer,
+  callOpenAI,
+  saveAiResponse,
 } from './api';
 import { AiChatButton, AiChatModal, AiModePanel, QuestionAiResponses } from './ai-chat';
 
@@ -173,6 +175,67 @@ export default function Answer() {
   const [expandedAiId, setExpandedAiId] = useState(null);
   const [expandedAiIds, setExpandedAiIds] = useState(() => new Set());
   const [showAllQuestions ] = useState(false);
+  const [recheckLoading, setRecheckLoading] = useState(null);
+
+  const handleRecheckAi = async (item) => {
+    if (recheckLoading) return;
+    setRecheckLoading(item.id);
+    try {
+      let imagesArray = [];
+      try {
+        if (item.images) {
+          const parsed = typeof item.images === 'string' ? JSON.parse(item.images) : item.images;
+          if (Array.isArray(parsed)) imagesArray = parsed;
+        }
+      } catch (e) {}
+
+      const prompt = `Check again and check deeply and give answer. Original question: ${item.question_prompt}`;
+      
+      const rawData = await callOpenAI({
+        questionText: prompt,
+        sheetOption: item.sheet_option || '',
+        sheetExplanation: item.sheet_explanation || '',
+        images: imagesArray,
+      });
+
+      const raw = rawData.text || '';
+      const text = raw.trim();
+      const answerMatch =
+        text.match(/ANSWER:\s*([\s\S]*?)(?=EXPLANATION:|$)/i) ||
+        text.match(/OPTION:\s*([\s\S]*?)(?=EXPLANATION:|$)/i);
+      const explainMatch = text.match(/EXPLANATION:\s*([\s\S]*?)$/i);
+      
+      const parsed = {
+        ai_option: answerMatch ? answerMatch[1].trim() : '',
+        ai_explanation: explainMatch ? explainMatch[1].trim() : text,
+        raw_response: text,
+      };
+
+      const existing = aiResponses;
+      const countForQ = existing.filter((r) => r.question_number === item.question_number).length;
+
+      const savedRow = await saveAiResponse({
+        question_number: item.question_number,
+        response_index: countForQ + 1,
+        user_name: userName,
+        question_prompt: prompt,
+        options_text: null,
+        sheet_option: item.sheet_option || '',
+        sheet_explanation: item.sheet_explanation || '',
+        ai_option: parsed.ai_option,
+        ai_explanation: parsed.ai_explanation,
+        raw_response: parsed.raw_response,
+        images: imagesArray,
+      });
+      await loadAll();
+      setExpandedAiIds((prev) => new Set(prev).add(savedRow.id));
+      setExpandedAiId(savedRow.id);
+    } catch(e) {
+      alert(e.message);
+    } finally {
+      setRecheckLoading(null);
+    }
+  };
 
   const toggleAiExpand = (id) => {
     setExpandedAiIds((prev) => {
@@ -456,6 +519,8 @@ export default function Answer() {
                     questions={questions}
                     expandedIds={expandedAiIds}
                     onToggle={toggleAiExpand}
+                    onRecheck={handleRecheckAi}
+                    recheckLoading={recheckLoading}
                   />
                 </article>
               );
@@ -503,6 +568,8 @@ export default function Answer() {
           questions={questions}
           expandedId={expandedAiId}
           onToggle={setExpandedAiId}
+          onRecheck={handleRecheckAi}
+          recheckLoading={recheckLoading}
         />
         </div>
       </div>

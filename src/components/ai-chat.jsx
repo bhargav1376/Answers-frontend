@@ -139,7 +139,7 @@ export function AiChatModal({
         <h2>AI Chat</h2>
         <p className="ai-modal-sub">ChatGPT (GPT-5.4-mini)</p>
         {error && <div className="modal-error">{error}</div>}
-        
+
         {lightboxImg && (
           <div className="ai-lightbox" onClick={() => setLightboxImg(null)}>
             <img src={lightboxImg} alt="Enlarged" onClick={(e) => e.stopPropagation()} />
@@ -250,7 +250,7 @@ export function AiChatModal({
   );
 }
 
-function AiResponseBody({ item, questions, onImageClick }) {
+function AiResponseBody({ item, questions, onImageClick, onRecheck, recheckLoading }) {
   const q = questions.find((x) => x.number === item.question_number);
   const title = q
     ? formatQuestionLabel(item.question_number, q.text)
@@ -262,7 +262,7 @@ function AiResponseBody({ item, questions, onImageClick }) {
       const parsed = typeof item.images === 'string' ? JSON.parse(item.images) : item.images;
       if (Array.isArray(parsed)) imagesArray = parsed;
     }
-  } catch (e) {}
+  } catch (e) { }
 
   return (
     <>
@@ -273,11 +273,11 @@ function AiResponseBody({ item, questions, onImageClick }) {
       {imagesArray.length > 0 && (
         <div className="ai-response-images">
           {imagesArray.map((img, idx) => (
-            <img 
-              key={idx} 
-              src={img} 
-              alt={`Input ${idx}`} 
-              onClick={() => onImageClick && onImageClick(img)} 
+            <img
+              key={idx}
+              src={img}
+              alt={`Input ${idx}`}
+              onClick={() => onImageClick && onImageClick(img)}
             />
           ))}
         </div>
@@ -297,6 +297,17 @@ function AiResponseBody({ item, questions, onImageClick }) {
         <p className="ai-result-line ai-explain">
           <span className="ai-key">explain</span> — {item.ai_explanation || '—'}
         </p>
+      </div>
+      <div style={{ marginTop: '0.75rem', marginBottom: '0.5rem' }}>
+        <button 
+          type="button" 
+          className="btn-ai-primary" 
+          style={{ padding: '6px 12px', fontSize: '0.75rem' }}
+          onClick={() => onRecheck && onRecheck(item)}
+          disabled={recheckLoading === item.id}
+        >
+          {recheckLoading === item.id ? 'Checking deeply…' : 'Ai check again deeply'}
+        </button>
       </div>
       <time>{formatTime(item.created_at)}</time>
     </>
@@ -322,6 +333,8 @@ export function QuestionAiResponses({
   questions,
   expandedIds,
   onToggle,
+  onRecheck,
+  recheckLoading,
 }) {
   const [lightboxImg, setLightboxImg] = useState(null);
 
@@ -352,7 +365,13 @@ export function QuestionAiResponses({
           />
           {expandedIds.has(item.id) && (
             <div className="ai-response-body">
-              <AiResponseBody item={item} questions={questions} onImageClick={setLightboxImg} />
+              <AiResponseBody 
+                item={item} 
+                questions={questions} 
+                onImageClick={setLightboxImg} 
+                onRecheck={onRecheck}
+                recheckLoading={recheckLoading}
+              />
             </div>
           )}
         </div>
@@ -361,20 +380,26 @@ export function QuestionAiResponses({
   );
 }
 
-function AiResponseCard({ item, questions, expanded, onToggle }) {
+function AiResponseCard({ item, questions, expanded, onToggle, onRecheck, recheckLoading }) {
   return (
     <li className="ai-response-item">
       <AiResponseToggle item={item} expanded={expanded} onToggle={onToggle} />
       {expanded && (
         <div className="ai-response-body">
-          <AiResponseBody item={item} questions={questions} onImageClick={item.onImageClick} />
+          <AiResponseBody 
+            item={item} 
+            questions={questions} 
+            onImageClick={item.onImageClick} 
+            onRecheck={onRecheck}
+            recheckLoading={recheckLoading}
+          />
         </div>
       )}
     </li>
   );
 }
 
-export function AiModePanel({ responses, questions, expandedId, onToggle }) {
+export function AiModePanel({ responses, questions, expandedId, onToggle, onRecheck, recheckLoading }) {
   const sorted = [...responses].sort(
     (a, b) => new Date(b.created_at) - new Date(a.created_at)
   );
@@ -398,44 +423,46 @@ export function AiModePanel({ responses, questions, expandedId, onToggle }) {
   };
 
   return (
-<aside className="answer-side ai-side">
-  <h2>AI mode</h2>
-  
-  {lightboxImg && (
-    <div className="ai-lightbox" onClick={() => setLightboxImg(null)}>
-      <img src={lightboxImg} alt="Enlarged" onClick={(e) => e.stopPropagation()} />
-      <button className="ai-lightbox-close" onClick={() => setLightboxImg(null)}>&times;</button>
-    </div>
-  )}
+    <aside className="answer-side ai-side">
+      <h2>AI mode</h2>
 
-  {sorted.length === 0 ? (
-    <p className="empty">No AI searches yet</p>
-  ) : (
-    <>
-      <p className="ai-mode-count">
-        {sorted.length} result
-        {sorted.length !== 1 ? 's' : ''} — click title to open
-      </p>
+      {lightboxImg && (
+        <div className="ai-lightbox" onClick={() => setLightboxImg(null)}>
+          <img src={lightboxImg} alt="Enlarged" onClick={(e) => e.stopPropagation()} />
+          <button className="ai-lightbox-close" onClick={() => setLightboxImg(null)}>&times;</button>
+        </div>
+      )}
 
-      <ul className="activity-list ai-list">
-        {sorted.map((item) => (
-          <AiResponseCard
-            key={item.id}
-            item={{...item, onImageClick: setLightboxImg}}
-            questions={questions}
-            expanded={expandedId === item.id}
-            onToggle={() =>
-              onToggle(
-                expandedId === item.id
-                  ? null
-                  : item.id
-              )
-            }
-          />
-        ))}
-      </ul>
-    </>
-  )}
-</aside>
+      {sorted.length === 0 ? (
+        <p className="empty">No AI searches yet</p>
+      ) : (
+        <>
+          <p className="ai-mode-count">
+            {sorted.length} result
+            {sorted.length !== 1 ? 's' : ''} — click title to open
+          </p>
+
+          <ul className="activity-list ai-list">
+            {sorted.map((item) => (
+              <AiResponseCard
+                key={item.id}
+                item={{ ...item, onImageClick: setLightboxImg }}
+                questions={questions}
+                expanded={expandedId === item.id}
+                onToggle={() =>
+                  onToggle(
+                    expandedId === item.id
+                      ? null
+                      : item.id
+                  )
+                }
+                onRecheck={onRecheck}
+                recheckLoading={recheckLoading}
+              />
+            ))}
+          </ul>
+        </>
+      )}
+    </aside>
   );
 }

@@ -174,7 +174,7 @@ export default function Answer({ onNavCode }) {
   const [aiResponses, setAiResponses] = useState([]);
   const [expandedAiId, setExpandedAiId] = useState(null);
   const [expandedAiIds, setExpandedAiIds] = useState(() => new Set());
-  const [showAllQuestions ] = useState(false);
+  const [showAllQuestions] = useState(false);
   const [recheckLoading, setRecheckLoading] = useState(null);
 
   const handleRecheckAi = async (item) => {
@@ -187,10 +187,10 @@ export default function Answer({ onNavCode }) {
           const parsed = typeof item.images === 'string' ? JSON.parse(item.images) : item.images;
           if (Array.isArray(parsed)) imagesArray = parsed;
         }
-      } catch (e) {}
+      } catch (e) { }
 
       const prompt = `Check again and check deeply and give answer. Original question: ${item.question_prompt}`;
-      
+
       const rawData = await callOpenAI({
         questionText: prompt,
         sheetOption: item.sheet_option || '',
@@ -204,7 +204,7 @@ export default function Answer({ onNavCode }) {
         text.match(/ANSWER:\s*([\s\S]*?)(?=EXPLANATION:|$)/i) ||
         text.match(/OPTION:\s*([\s\S]*?)(?=EXPLANATION:|$)/i);
       const explainMatch = text.match(/EXPLANATION:\s*([\s\S]*?)$/i);
-      
+
       const parsed = {
         ai_option: answerMatch ? answerMatch[1].trim() : '',
         ai_explanation: explainMatch ? explainMatch[1].trim() : text,
@@ -230,7 +230,7 @@ export default function Answer({ onNavCode }) {
       await loadAll();
       setExpandedAiIds((prev) => new Set(prev).add(savedRow.id));
       setExpandedAiId(savedRow.id);
-    } catch(e) {
+    } catch (e) {
       alert(e.message);
     } finally {
       setRecheckLoading(null);
@@ -405,175 +405,175 @@ export default function Answer({ onNavCode }) {
         {error && <div className="answer-error">{error}</div>}
 
         <div className="answer-layout">
-        <aside className="answer-side left">
-          <h2>Recent activity</h2>
-          <ul className="activity-list">
-            {recent.length === 0 && <li className="empty">No activity yet</li>}
-            {recent.map((item) => {
-              const q = item.question_number;
-              const currentOption = answerByQ[q]?.answer_text || '';
-              const comment =
-                item.activity_type === 'commented'
-                  ? item.new_value
-                  : latestCommentByQ[q]?.comment_text || '';
-              const option =
-                item.activity_type === 'commented'
-                  ? currentOption
-                  : item.new_value || currentOption;
-              return (
-                <RecentItem
-                  key={item.id}
-                  item={item}
-                  option={option}
-                  comment={comment}
-                />
-              );
-            })}
-          </ul>
-        </aside>
+          <aside className="answer-side left">
+            <h2>Recent activity</h2>
+            <ul className="activity-list">
+              {recent.length === 0 && <li className="empty">No activity yet</li>}
+              {recent.map((item) => {
+                const q = item.question_number;
+                const currentOption = answerByQ[q]?.answer_text || '';
+                const comment =
+                  item.activity_type === 'commented'
+                    ? item.new_value
+                    : latestCommentByQ[q]?.comment_text || '';
+                const option =
+                  item.activity_type === 'commented'
+                    ? currentOption
+                    : item.new_value || currentOption;
+                return (
+                  <RecentItem
+                    key={item.id}
+                    item={item}
+                    option={option}
+                    comment={comment}
+                  />
+                );
+              })}
+            </ul>
+          </aside>
 
-        <main className="answer-main">
-          <p className="answer-hint">
-            For each question: pick an <strong>option</strong> (left) and write your{' '}
-            <strong>explanation</strong> (right), then Save.
-          </p>
+          <main className="answer-main">
+            <p className="answer-hint">
+              For each question: pick an <strong>option</strong> (left) and write your{' '}
+              <strong>explanation</strong> (right), then Save.
+            </p>
 
 
 
-          <div className="question-list">
-          {/* {questions.map((q) => { */}
-          {questions
-  .slice(0, showAllQuestions ? questions.length : 10)
-  .map((q) => {
-              const saved = answerByQ[q.number];
-              const lastComment = latestCommentByQ[q.number];
-              return (
-                <article key={q.number} className="q-card">
-                  <header className="q-card-head">
-                    <span className="q-badge">{q.number}</span>
-                    <h3 className="q-title">{formatQuestionLabel(q.number, q.text)}</h3>
-                    {saved && <span className="q-meta">{optionMetaLabel(saved)}</span>}
-                  </header>
+            <div className="question-list">
+              {/* {questions.map((q) => { */}
+              {questions
+                .slice(0, showAllQuestions ? questions.length : 10)
+                .map((q) => {
+                  const saved = answerByQ[q.number];
+                  const lastComment = latestCommentByQ[q.number];
+                  return (
+                    <article key={q.number} className="q-card">
+                      <header className="q-card-head">
+                        <span className="q-badge">{q.number}</span>
+                        <h3 className="q-title">{formatQuestionLabel(q.number, q.text)}</h3>
+                        {saved && <span className="q-meta">{optionMetaLabel(saved)}</span>}
+                      </header>
 
-                  <div className="q-inputs">
-                    <label className="input-block option-block">
-                      <span className="input-label">Option</span>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={3}
-                        placeholder="1"
-                        value={optionDrafts[q.number] ?? ''}
-                        onChange={(e) =>
-                          setOptionDrafts((prev) => ({
-                            ...prev,
-                            [q.number]: e.target.value,
-                          }))
-                        }
-                      />
-                    </label>
+                      <div className="q-inputs">
+                        <label className="input-block option-block">
+                          <span className="input-label">Option</span>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            maxLength={3}
+                            placeholder="1"
+                            value={optionDrafts[q.number] ?? ''}
+                            onChange={(e) =>
+                              setOptionDrafts((prev) => ({
+                                ...prev,
+                                [q.number]: e.target.value,
+                              }))
+                            }
+                          />
+                        </label>
 
-                    <label className="input-block comment-block">
-                      <span className="input-label">Explanation</span>
-                      <input
-                        type="text"
-                        placeholder="Why you chose this option..."
-                        value={commentDrafts[q.number] ?? ''}
-                        onChange={(e) =>
-                          setCommentDrafts((prev) => ({
-                            ...prev,
-                            [q.number]: e.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                  </div>
+                        <label className="input-block comment-block">
+                          <span className="input-label">Explanation</span>
+                          <input
+                            type="text"
+                            placeholder="Why you chose this option..."
+                            value={commentDrafts[q.number] ?? ''}
+                            onChange={(e) =>
+                              setCommentDrafts((prev) => ({
+                                ...prev,
+                                [q.number]: e.target.value,
+                              }))
+                            }
+                          />
+                        </label>
+                      </div>
 
-                  <div className="q-card-actions">
-                    <div className="q-card-foot">
-                      <button
-                        type="button"
-                        className="btn-save"
-                        disabled={saving === q.number}
-                        onClick={() => handleSave(q.number)}
-                      >
-                        {saving === q.number ? 'Saving…' : 'Save'}
-                      </button>
-                    </div>
-                    {(saved?.answer_text || lastComment) && (
-                      <div className="q-saved-below">
-                        {saved?.answer_text && (
-                          <p className="saved-option">
-                            Saved option: <strong>{saved.answer_text}</strong>
-                          </p>
-                        )}
-                        {lastComment && (
-                          <p className="saved-comment">
-                            Latest explanation: <em>{lastComment.comment_text}</em>
-                          </p>
+                      <div className="q-card-actions">
+                        <div className="q-card-foot">
+                          <button
+                            type="button"
+                            className="btn-save"
+                            disabled={saving === q.number}
+                            onClick={() => handleSave(q.number)}
+                          >
+                            {saving === q.number ? 'Saving…' : 'Save'}
+                          </button>
+                        </div>
+                        {(saved?.answer_text || lastComment) && (
+                          <div className="q-saved-below">
+                            {saved?.answer_text && (
+                              <p className="saved-option">
+                                Saved option: <strong>{saved.answer_text}</strong>
+                              </p>
+                            )}
+                            {lastComment && (
+                              <p className="saved-comment">
+                                Latest explanation: <em>{lastComment.comment_text}</em>
+                              </p>
+                            )}
+                          </div>
                         )}
                       </div>
-                    )}
-                  </div>
 
-                  <QuestionAiResponses
-                    questionNumber={q.number}
-                    responses={aiResponses}
-                    questions={questions}
-                    expandedIds={expandedAiIds}
-                    onToggle={toggleAiExpand}
-                    onRecheck={handleRecheckAi}
-                    recheckLoading={recheckLoading}
-                  />
-                </article>
-              );
-            })}
-          </div>
+                      <QuestionAiResponses
+                        questionNumber={q.number}
+                        responses={aiResponses}
+                        questions={questions}
+                        expandedIds={expandedAiIds}
+                        onToggle={toggleAiExpand}
+                        onRecheck={handleRecheckAi}
+                        recheckLoading={recheckLoading}
+                      />
+                    </article>
+                  );
+                })}
+            </div>
 
-          <section className="comment-log">
-            <h3>Explanation log</h3>
-            {comments.length === 0 ? (
-              <p className="empty-feed">No explanations posted yet</p>
-            ) : (
-              comments.map((c) => (
-                <div key={c.id} className="log-row">
-                  <p className="activity-headline">
-                    <strong>{c.user_name}</strong> added explanation on{' '}
-                    <span className="q-num">Q{c.question_number}</span>
-                  </p>
-                  <div className="activity-line">
-                    option —{' '}
-                    <span className="activity-val">
-                      {answerByQ[c.question_number]?.answer_text || '—'}
-                    </span>
+            <section className="comment-log">
+              <h3>Explanation log</h3>
+              {comments.length === 0 ? (
+                <p className="empty-feed">No explanations posted yet</p>
+              ) : (
+                comments.map((c) => (
+                  <div key={c.id} className="log-row">
+                    <p className="activity-headline">
+                      <strong>{c.user_name}</strong> added explanation on{' '}
+                      <span className="q-num">Q{c.question_number}</span>
+                    </p>
+                    <div className="activity-line">
+                      option —{' '}
+                      <span className="activity-val">
+                        {answerByQ[c.question_number]?.answer_text || '—'}
+                      </span>
+                    </div>
+                    <div className="activity-line">
+                      Comment — <span className="activity-val">"{c.comment_text}"</span>
+                    </div>
+                    <time>{formatTime(c.created_at)}</time>
                   </div>
-                  <div className="activity-line">
-                    Comment — <span className="activity-val">"{c.comment_text}"</span>
-                  </div>
-                  <time>{formatTime(c.created_at)}</time>
-                </div>
-              ))
-            )}
-          </section>
-        </main>
+                ))
+              )}
+            </section>
+          </main>
 
-        <aside className="answer-side right">
-          <h2>Updated activity</h2>
-          <ul className="activity-list">
-            {updates.length === 0 && <li className="empty">No updates yet</li>}
-            {updates.map((item) => (
-              <UpdateItem key={item.id} item={item} />
-            ))}
-          </ul>
-        </aside>
-        <AiModePanel
-          responses={aiResponses}
-          questions={questions}
-          expandedId={expandedAiId}
-          onToggle={setExpandedAiId}
-          onRecheck={handleRecheckAi}
-          recheckLoading={recheckLoading}
-        />
+          <aside className="answer-side right">
+            <h2>Updated activity</h2>
+            <ul className="activity-list">
+              {updates.length === 0 && <li className="empty">No updates yet</li>}
+              {updates.map((item) => (
+                <UpdateItem key={item.id} item={item} />
+              ))}
+            </ul>
+          </aside>
+          <AiModePanel
+            responses={aiResponses}
+            questions={questions}
+            expandedId={expandedAiId}
+            onToggle={setExpandedAiId}
+            onRecheck={handleRecheckAi}
+            recheckLoading={recheckLoading}
+          />
         </div>
       </div>
     </div>

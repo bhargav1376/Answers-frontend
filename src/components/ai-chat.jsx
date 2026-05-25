@@ -251,6 +251,10 @@ export function AiChatModal({
 }
 
 function AiResponseBody({ item, questions, onImageClick, onRecheck, recheckLoading }) {
+  const [showFollowUp, setShowFollowUp] = useState(false);
+  const [followUpText, setFollowUpText] = useState('');
+  const [followUpImages, setFollowUpImages] = useState([]);
+
   const q = questions.find((x) => x.number === item.question_number);
   const title = q
     ? formatQuestionLabel(item.question_number, q.text)
@@ -263,6 +267,15 @@ function AiResponseBody({ item, questions, onImageClick, onRecheck, recheckLoadi
       if (Array.isArray(parsed)) imagesArray = parsed;
     }
   } catch (e) { }
+
+  const handleSubmit = () => {
+    if (onRecheck) {
+      onRecheck(item, followUpText, followUpImages);
+      setShowFollowUp(false);
+      setFollowUpText('');
+      setFollowUpImages([]);
+    }
+  };
 
   return (
     <>
@@ -299,15 +312,86 @@ function AiResponseBody({ item, questions, onImageClick, onRecheck, recheckLoadi
         </p>
       </div>
       <div style={{ marginTop: '0.75rem', marginBottom: '0.5rem' }}>
-        <button 
-          type="button" 
-          className="btn-ai-primary" 
-          style={{ padding: '6px 12px', fontSize: '0.75rem' }}
-          onClick={() => onRecheck && onRecheck(item)}
-          disabled={recheckLoading === item.id}
-        >
-          {recheckLoading === item.id ? 'Checking deeply…' : 'Ai check again deeply'}
-        </button>
+        {!showFollowUp ? (
+          <button 
+            type="button" 
+            className="btn-ai-primary" 
+            style={{ padding: '6px 12px', fontSize: '0.75rem' }}
+            onClick={() => setShowFollowUp(true)}
+            disabled={recheckLoading === item.id}
+          >
+            {recheckLoading === item.id ? 'Checking deeply…' : 'Ai check again deeply'}
+          </button>
+        ) : (
+          <div className="ai-follow-up-box" style={{ marginTop: '0.5rem' }}>
+            <textarea
+              rows={2}
+              value={followUpText}
+              onChange={(e) => setFollowUpText(e.target.value)}
+              onPaste={(e) => {
+                const items = e.clipboardData?.items;
+                if (!items) return;
+                for (let i = 0; i < items.length; i++) {
+                  if (items[i].type.indexOf('image') !== -1) {
+                    const file = items[i].getAsFile();
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                      setFollowUpImages((prev) => {
+                        if (prev.length >= 4) return prev;
+                        return [...prev, ev.target.result];
+                      });
+                    };
+                    reader.readAsDataURL(file);
+                  }
+                }
+              }}
+              placeholder="Why is it wrong? Paste text or image here..."
+              style={{
+                width: '100%',
+                padding: '8px',
+                boxSizing: 'border-box',
+                background: '#0c1014',
+                color: '#fff',
+                border: '1px solid #2a3848',
+                borderRadius: '6px',
+                resize: 'vertical',
+                fontFamily: 'inherit',
+                fontSize: '0.85rem'
+              }}
+              autoFocus
+            />
+            {followUpImages.length > 0 && (
+              <div className="ai-image-previews" style={{ marginTop: '0.5rem' }}>
+                {followUpImages.map((img, idx) => (
+                  <div key={idx} className="ai-image-preview">
+                    <img src={img} alt={`Preview ${idx}`} onClick={() => onImageClick && onImageClick(img)} />
+                    <button type="button" onClick={() => setFollowUpImages((prev) => prev.filter((_, i) => i !== idx))}>&times;</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '8px', marginTop: '0.5rem' }}>
+              <button 
+                type="button" 
+                className="btn-ai-primary" 
+                style={{ padding: '6px 12px', fontSize: '0.75rem' }}
+                onClick={handleSubmit} 
+                disabled={recheckLoading === item.id || (!followUpText.trim() && followUpImages.length === 0)}
+              >
+                {recheckLoading === item.id ? 'Checking deeply…' : 'Submit Check'}
+              </button>
+              <button 
+                type="button" 
+                className="btn-ghost" 
+                style={{ padding: '6px 12px', fontSize: '0.75rem' }}
+                onClick={() => { setShowFollowUp(false); setFollowUpText(''); setFollowUpImages([]); }} 
+                disabled={recheckLoading === item.id}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       <time>{formatTime(item.created_at)}</time>
     </>

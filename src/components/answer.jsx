@@ -23,6 +23,7 @@ import {
   checkUser,
   renameUser,
   deleteUser,
+  pingUser,
 } from './api';
 import { AiChatButton, AiChatModal, AiModePanel, QuestionAiResponses } from './ai-chat';
 
@@ -461,7 +462,13 @@ export default function Answer({ onNavCode }) {
     if (!userName) return;
     loadAll();
     const id = setInterval(loadAll, 3000);
-    return () => clearInterval(id);
+    const pingId = setInterval(() => {
+      pingUser({ user_name: userName }).catch(() => {});
+    }, 10000);
+    return () => {
+      clearInterval(id);
+      clearInterval(pingId);
+    };
   }, [userName, loadAll]);
 
   const handleName = async (name) => {
@@ -469,6 +476,7 @@ export default function Answer({ onNavCode }) {
     setUserName(name);
     try {
       await loginUser({ user_name: name });
+      await loadAll();
     } catch (e) {
       console.error('Failed to register user:', e);
     }
@@ -804,12 +812,26 @@ export default function Answer({ onNavCode }) {
             ) : (
               <>
                 {selectedContact ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', marginBottom: '1rem', gap: '10px' }}>
-                      <button type="button" className="btn-ghost" onClick={() => setSelectedContact(null)}>← Back</button>
-                      <h3 style={{ margin: 0 }}>Chat with {selectedContact}</h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'hidden' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', padding: '10px', borderBottom: '1px solid #2a3848', background: '#1c252e' }}>
+                      <button type="button" className="btn-ghost" onClick={() => setSelectedContact(null)} style={{ padding: '4px 8px', marginRight: '10px' }}>&larr; Back</button>
+                      <div className="avatar">
+                        {selectedContact.charAt(0).toUpperCase()}
+                        <span className={`status-dot ${
+                          contacts.find(c => c.user_name === selectedContact) && 
+                          (new Date() - new Date(contacts.find(c => c.user_name === selectedContact).last_seen) < 30000) 
+                            ? 'online' 
+                            : 'offline'
+                        }`}></span>
+                      </div>
+                      <div>
+                        <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#00e5ff' }}>{selectedContact}</h3>
+                        <span style={{ fontSize: '0.8rem', color: '#888' }}>
+                          {contacts.find(c => c.user_name === selectedContact) && (new Date() - new Date(contacts.find(c => c.user_name === selectedContact).last_seen) < 30000) ? 'Online' : 'Offline'}
+                        </span>
+                      </div>
                     </div>
-                    <div className="chat-input-box" style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '1rem' }}>
+                    <div className="chat-input-box" style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '1rem', padding: '10px' }}>
                       <textarea
                         rows={2}
                         placeholder="Type a message..."
@@ -846,20 +868,26 @@ export default function Answer({ onNavCode }) {
                     <ul style={{ flex: 1, overflowY: 'auto', listStyle: 'none', padding: 0, margin: 0 }}>
                       {contacts.length === 0 && <li className="empty">No other users online yet</li>}
                       {contacts.map((c) => (
-                        <li key={c.user_name} style={{ padding: '10px', borderBottom: '1px solid #2a3848', cursor: 'pointer', display: 'flex', flexDirection: 'column' }} onClick={() => setSelectedContact(c.user_name)}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <strong style={{ fontSize: '1.1rem', color: '#e8eaed' }}>{c.user_name}</strong>
-                            {c.unread_count > 0 && (
-                              <span className="contact-unread-badge">
-                                {c.unread_count} new
-                              </span>
+                        <li key={c.user_name} style={{ padding: '10px', borderBottom: '1px solid #2a3848', cursor: 'pointer', display: 'flex', alignItems: 'center' }} onClick={() => setSelectedContact(c.user_name)}>
+                          <div className="avatar" style={{ marginRight: '10px' }}>
+                            {c.user_name.charAt(0).toUpperCase()}
+                            <span className={`status-dot ${(new Date() - new Date(c.last_seen) < 30000) ? 'online' : 'offline'}`}></span>
+                          </div>
+                          <div style={{ flex: 1, overflow: 'hidden' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <strong style={{ fontSize: '1.1rem', color: '#e8eaed' }}>{c.user_name}</strong>
+                              {c.unread_count > 0 && (
+                                <span className="contact-unread-badge">
+                                  {c.unread_count} new
+                                </span>
+                              )}
+                            </div>
+                            {c.last_message && (
+                              <div style={{ fontSize: '0.85rem', color: '#888', marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {c.last_message}
+                              </div>
                             )}
                           </div>
-                          {c.last_message && (
-                            <div style={{ fontSize: '0.85rem', color: '#888', marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              {c.last_message}
-                            </div>
-                          )}
                         </li>
                       ))}
                     </ul>

@@ -50,6 +50,8 @@ export const postChatMessage = (body) =>
   fetchJson('/api/chat', { method: 'POST', body: JSON.stringify(body) });
 export const loginUser = (body) =>
   fetchJson('/api/login', { method: 'POST', body: JSON.stringify(body) });
+export const pingUser = (body) =>
+  fetchJson('/api/user/ping', { method: 'POST', body: JSON.stringify(body) });
 export const getPersonalChatSummary = (userName) =>
   fetchJson(`/api/personal_chat/summary?user_name=${encodeURIComponent(userName)}`);
 export const getPersonalChatMessages = (user1, user2) =>

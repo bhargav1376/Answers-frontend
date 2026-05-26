@@ -25,6 +25,12 @@ export const getRecentActivity = () => fetchJson('/api/activity/recent');
 export const getUpdateActivity = () => fetchJson('/api/activity/updates');
 export const deleteAllData = (body) =>
   fetchJson('/api/admin/delete-all', { method: 'POST', body: JSON.stringify(body) });
+export const deleteAllPersonalData = (body) =>
+  fetchJson('/api/admin/delete-personal', { method: 'POST', body: JSON.stringify(body) });
+export const checkUser = (userName) =>
+  fetchJson(`/api/user/check?user_name=${encodeURIComponent(userName)}`);
+export const renameUser = (body) =>
+  fetchJson('/api/user/rename', { method: 'POST', body: JSON.stringify(body) });
 export const getAiResponses = () => fetchJson('/api/ai/responses');
 export const saveAiResponse = (body) =>
   fetchJson('/api/ai/responses', { method: 'POST', body: JSON.stringify(body) });

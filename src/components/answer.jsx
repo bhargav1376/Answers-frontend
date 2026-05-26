@@ -19,6 +19,9 @@ import {
   getPersonalChatMessages,
   postPersonalChatMessage,
   markPersonalChatRead,
+  deleteAllPersonalData,
+  checkUser,
+  renameUser,
 } from './api';
 import { AiChatButton, AiChatModal, AiModePanel, QuestionAiResponses } from './ai-chat';
 
@@ -50,6 +53,27 @@ function formatQuestionLabel(number, text) {
 
 function NameGate({ onSubmit }) {
   const [name, setName] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!name.trim()) return;
+    setLoading(true);
+    setError('');
+    try {
+      const res = await checkUser(name.trim());
+      if (res.exists) {
+        setError('This name is already taken. If this is you returning, click "Force Login".');
+      } else {
+        onSubmit(name.trim());
+      }
+    } catch (e) {
+      setError('Failed to check name: ' + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="name-gate">
       <div className="name-gate-card">
@@ -59,13 +83,64 @@ function NameGate({ onSubmit }) {
           type="text"
           placeholder="Your name"
           value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && name.trim() && onSubmit(name.trim())}
+          onChange={(e) => { setName(e.target.value); setError(''); }}
+          onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
           autoFocus
         />
-        <button type="button" disabled={!name.trim()} onClick={() => onSubmit(name.trim())}>
-          Continue
+        {error && (
+          <div style={{ color: '#e11d48', fontSize: '0.8rem', marginTop: '8px', marginBottom: '8px' }}>
+            {error}
+            <div style={{ marginTop: '4px' }}>
+              <button type="button" className="btn-ghost" style={{ fontSize: '0.8rem' }} onClick={() => onSubmit(name.trim())}>Force Login</button>
+            </div>
+          </div>
+        )}
+        <button type="button" disabled={!name.trim() || loading} onClick={handleSubmit} style={{ marginTop: error ? 0 : '16px' }}>
+          {loading ? 'Checking...' : 'Continue'}
         </button>
+      </div>
+    </div>
+  );
+}
+
+function RenameModal({ open, onClose, onConfirm, loading, error, currentName }) {
+  const [newName, setNewName] = useState('');
+
+  useEffect(() => {
+    if (open) setNewName('');
+  }, [open]);
+
+  if (!open) return null;
+
+  return (
+    <div className="modal-overlay" onClick={onClose} role="presentation">
+      <div className="modal-card" onClick={(e) => e.stopPropagation()} role="dialog">
+        <h2>Rename User</h2>
+        <p>Change your display name ({currentName}) across all your previous chats and answers.</p>
+        {error && <div className="modal-error">{error}</div>}
+        <label>
+          New Name
+          <input
+            type="text"
+            placeholder="Enter new name"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            autoFocus
+          />
+        </label>
+        <div className="modal-actions">
+          <button type="button" className="btn-ghost" onClick={onClose} disabled={loading}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn-ai-primary"
+            disabled={loading || !newName.trim() || newName.trim() === currentName}
+            onClick={() => onConfirm(newName.trim())}
+          >
+            {loading ? 'Renaming…' : 'Rename'}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -94,17 +169,24 @@ function RecentItem({ item, option, comment }) {
   );
 }
 
-function DeleteModal({ open, onClose, onConfirm, loading, error }) {
+function DeleteModal({ open, onClose, onConfirm, loading, error, title, description, confirmText }) {
   const [adminId, setAdminId] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
+
+  useEffect(() => {
+    if (open) {
+      setAdminId('');
+      setAdminPassword('');
+    }
+  }, [open]);
 
   if (!open) return null;
 
   return (
     <div className="modal-overlay" onClick={onClose} role="presentation">
       <div className="modal-card" onClick={(e) => e.stopPropagation()} role="dialog">
-        <h2>Delete all data</h2>
-        <p>This removes every option, explanation, and activity log. Cannot be undone.</p>
+        <h2>{title || 'Delete data'}</h2>
+        <p>{description}</p>
         {error && <div className="modal-error">{error}</div>}
         <label>
           ID
@@ -135,7 +217,7 @@ function DeleteModal({ open, onClose, onConfirm, loading, error }) {
             disabled={loading || !adminId || !adminPassword}
             onClick={() => onConfirm(adminId, adminPassword)}
           >
-            {loading ? 'Deleting…' : 'Delete everything'}
+            {loading ? 'Deleting…' : (confirmText || 'Delete')}
           </button>
         </div>
       </div>
@@ -184,8 +266,14 @@ export default function Answer({ onNavCode }) {
   const [personalDraft, setPersonalDraft] = useState('');
   const [error, setError] = useState('');
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState('all'); // 'all' or 'personal'
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameLoading, setRenameLoading] = useState(false);
+  const [renameError, setRenameError] = useState('');
+  
   const [aiOpen, setAiOpen] = useState(false);
   const [aiResponses, setAiResponses] = useState([]);
   const [expandedAiId, setExpandedAiId] = useState(null);
@@ -379,10 +467,41 @@ export default function Answer({ onNavCode }) {
       setCommentDrafts({});
       setDeleteOpen(false);
       await loadAll();
+      setDeleteOpen(false);
     } catch (e) {
       setDeleteError(e.message);
     } finally {
       setDeleteLoading(false);
+    }
+  };
+
+  const handleDeletePersonal = async (id, password) => {
+    setDeleteLoading(true);
+    setDeleteError('');
+    try {
+      await deleteAllPersonalData({ admin_id: id, admin_password: password });
+      await loadAll();
+      setDeleteOpen(false);
+    } catch (e) {
+      setDeleteError(e.message);
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const handleRename = async (newName) => {
+    setRenameLoading(true);
+    setRenameError('');
+    try {
+      await renameUser({ old_name: userName, new_name: newName });
+      localStorage.setItem(NAME_KEY, newName);
+      setUserName(newName);
+      setRenameOpen(false);
+      await loadAll();
+    } catch (e) {
+      setRenameError(e.message);
+    } finally {
+      setRenameLoading(false);
     }
   };
 
@@ -438,35 +557,43 @@ export default function Answer({ onNavCode }) {
         <button type="button" className="btn-ghost" onClick={onNavCode}>
           Code
         </button>
-        <AiChatButton onClick={() => setAiOpen(true)} />
         <button
           type="button"
-          className="btn-delete"
-          onClick={() => {
-            setDeleteError('');
-            setDeleteOpen(true);
-          }}
-        >
-          Delete
-        </button>
-        <button
-          type="button"
-          className="btn-ghost"
-          onClick={() => {
-            localStorage.removeItem(NAME_KEY);
-            setUserName('');
-          }}
+          className="btn-ai-primary"
+          onClick={() => setRenameOpen(true)}
         >
           Change name
         </button>
+        <div className="answer-header-actions">
+          <button
+            type="button"
+            className="btn-danger-outline"
+            onClick={() => { setDeleteTarget('all'); setDeleteOpen(true); }}
+          >
+            Delete data
+          </button>
+          <AiChatButton onClick={() => setAiOpen(true)} />
+        </div>
       </header>
+
+      <RenameModal
+        open={renameOpen}
+        onClose={() => !renameLoading && setRenameOpen(false)}
+        onConfirm={handleRename}
+        loading={renameLoading}
+        error={renameError}
+        currentName={userName}
+      />
 
       <DeleteModal
         open={deleteOpen}
         onClose={() => !deleteLoading && setDeleteOpen(false)}
-        onConfirm={handleDeleteAll}
+        onConfirm={deleteTarget === 'all' ? handleDeleteAll : handleDeletePersonal}
         loading={deleteLoading}
         error={deleteError}
+        title={deleteTarget === 'all' ? 'Delete all data' : 'Delete personal chats'}
+        description={deleteTarget === 'all' ? 'This removes every option, explanation, activity log, and team chat message. Cannot be undone.' : 'This will permanently delete all personal chat messages between all users. Cannot be undone.'}
+        confirmText={deleteTarget === 'all' ? 'Delete everything' : 'Delete personal chats'}
       />
 
       <AiChatModal
@@ -596,8 +723,12 @@ export default function Answer({ onNavCode }) {
                     </ul>
                   </div>
                 ) : (
-                  <ul style={{ flex: 1, overflowY: 'auto', listStyle: 'none', padding: 0, margin: 0 }}>
-                    {contacts.length === 0 && <li className="empty">No other users online yet</li>}
+                  <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'hidden' }}>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '0 0 10px 0' }}>
+                      <button type="button" className="btn-danger-outline" style={{ fontSize: '0.75rem', padding: '4px 8px' }} onClick={() => { setDeleteTarget('personal'); setDeleteOpen(true); }}>Delete</button>
+                    </div>
+                    <ul style={{ flex: 1, overflowY: 'auto', listStyle: 'none', padding: 0, margin: 0 }}>
+                      {contacts.length === 0 && <li className="empty">No other users online yet</li>}
                     {contacts.map((c) => (
                       <li key={c.user_name} style={{ padding: '10px', borderBottom: '1px solid #2a3848', cursor: 'pointer', display: 'flex', flexDirection: 'column' }} onClick={() => setSelectedContact(c.user_name)}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -616,6 +747,7 @@ export default function Answer({ onNavCode }) {
                       </li>
                     ))}
                   </ul>
+                  </div>
                 )}
               </>
             )}

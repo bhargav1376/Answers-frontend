@@ -12,6 +12,13 @@ import {
   saveAnswer,
   callOpenAI,
   saveAiResponse,
+  getChatMessages,
+  postChatMessage,
+  loginUser,
+  getPersonalChatSummary,
+  getPersonalChatMessages,
+  postPersonalChatMessage,
+  markPersonalChatRead,
 } from './api';
 import { AiChatButton, AiChatModal, AiModePanel, QuestionAiResponses } from './ai-chat';
 
@@ -166,6 +173,15 @@ export default function Answer({ onNavCode }) {
   const [optionDrafts, setOptionDrafts] = useState({});
   const [commentDrafts, setCommentDrafts] = useState({});
   const [saving, setSaving] = useState(null);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatDraft, setChatDraft] = useState('');
+  const [replyTo, setReplyTo] = useState(null);
+
+  const [leftTab, setLeftTab] = useState('team'); // 'team' or 'personal'
+  const [contacts, setContacts] = useState([]);
+  const [selectedContact, setSelectedContact] = useState(null);
+  const [personalMessages, setPersonalMessages] = useState([]);
+  const [personalDraft, setPersonalDraft] = useState('');
   const [error, setError] = useState('');
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -248,25 +264,24 @@ export default function Answer({ onNavCode }) {
 
   const loadAll = useCallback(async () => {
     try {
-      const [q, a, c, r, u, ai] = await Promise.all([
+      const [q, a, c, r, u, ai, chatMsgs, contactsSummary] = await Promise.all([
         getQuestions(),
         getAnswers(),
         getComments(),
         getRecentActivity(),
         getUpdateActivity(),
         getAiResponses().catch(() => []),
+        getChatMessages().catch(() => []),
+        getPersonalChatSummary(userName).catch(() => []),
       ]);
       setQuestions(q);
       setAnswers(a);
-      const opts = {};
-      a.forEach((row) => {
-        opts[row.question_number] = row.answer_text;
-      });
-      setOptionDrafts(opts);
       setComments(c);
       setRecent(r);
       setUpdates(u);
       setAiResponses(ai);
+      setChatMessages(chatMsgs);
+      setContacts(contactsSummary || []);
       setError('');
     } catch (e) {
       setError(e.message || 'Failed to load. Is backend running on port 3030?');
@@ -280,10 +295,73 @@ export default function Answer({ onNavCode }) {
     return () => clearInterval(id);
   }, [userName, loadAll]);
 
-  const handleName = (name) => {
+  const handleName = async (name) => {
     localStorage.setItem(NAME_KEY, name);
     setUserName(name);
+    try {
+      await loginUser({ user_name: name });
+    } catch (e) {
+      console.error('Failed to register user:', e);
+    }
   };
+
+  const handleSendChat = async () => {
+    if (!chatDraft.trim()) return;
+    try {
+      await postChatMessage({
+        user_name: userName,
+        content: chatDraft.trim(),
+        reply_to_id: replyTo ? replyTo.id : null,
+      });
+      setChatDraft('');
+      setReplyTo(null);
+      await loadAll();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  useEffect(() => {
+    if (!userName || !selectedContact) return;
+    const loadMsgs = async () => {
+      try {
+        const msgs = await getPersonalChatMessages(userName, selectedContact);
+        setPersonalMessages(msgs);
+        if (msgs.some(m => m.sender_name === selectedContact && m.receiver_name === userName && !m.read_status)) {
+          await markPersonalChatRead({ sender_name: selectedContact, receiver_name: userName });
+          loadAll(); // update summary
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    loadMsgs();
+    const id = setInterval(loadMsgs, 3000);
+    return () => clearInterval(id);
+  }, [userName, selectedContact, loadAll]);
+
+  const handleSendPersonalChat = async () => {
+    if (!personalDraft.trim() || !selectedContact) return;
+    try {
+      await postPersonalChatMessage({
+        sender_name: userName,
+        receiver_name: selectedContact,
+        content: personalDraft.trim(),
+      });
+      setPersonalDraft('');
+      const msgs = await getPersonalChatMessages(userName, selectedContact);
+      setPersonalMessages(msgs);
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const answerByQ = answers.reduce((acc, row) => {
+    if (!acc[row.question_number] || new Date(row.created_at) > new Date(acc[row.question_number].created_at)) {
+      acc[row.question_number] = row;
+    }
+    return acc;
+  }, {});
 
   const latestCommentByQ = comments.reduce((acc, c) => {
     if (!acc[c.question_number] || new Date(c.created_at) > new Date(acc[c.question_number].created_at)) {
@@ -321,6 +399,11 @@ export default function Answer({ onNavCode }) {
           user_name: userName,
           answer_text: option,
         });
+        setOptionDrafts((prev) => {
+          const next = { ...prev };
+          delete next[questionNumber];
+          return next;
+        });
       }
       if (explanation) {
         await postComment({
@@ -328,7 +411,11 @@ export default function Answer({ onNavCode }) {
           user_name: userName,
           comment_text: explanation,
         });
-        setCommentDrafts((prev) => ({ ...prev, [questionNumber]: explanation }));
+        setCommentDrafts((prev) => {
+          const next = { ...prev };
+          delete next[questionNumber];
+          return next;
+        });
       }
       await loadAll();
     } catch (e) {
@@ -341,9 +428,6 @@ export default function Answer({ onNavCode }) {
   if (!userName) {
     return <NameGate onSubmit={handleName} />;
   }
-
-  const answerByQ = Object.fromEntries(answers.map((a) => [a.question_number, a]));
-
   return (
     <div className="answer-app">
       <header className="answer-top answer-top-fixed">
@@ -405,31 +489,136 @@ export default function Answer({ onNavCode }) {
         {error && <div className="answer-error">{error}</div>}
 
         <div className="answer-layout">
-          <aside className="answer-side left">
-            <h2>Recent activity</h2>
-            <ul className="activity-list">
-              {recent.length === 0 && <li className="empty">No activity yet</li>}
-              {recent.map((item) => {
-                const q = item.question_number;
-                const currentOption = answerByQ[q]?.answer_text || '';
-                const comment =
-                  item.activity_type === 'commented'
-                    ? item.new_value
-                    : latestCommentByQ[q]?.comment_text || '';
-                const option =
-                  item.activity_type === 'commented'
-                    ? currentOption
-                    : item.new_value || currentOption;
-                return (
-                  <RecentItem
-                    key={item.id}
-                    item={item}
-                    option={option}
-                    comment={comment}
+          <aside className="answer-side chat-side left" style={{ display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '1rem' }}>
+              <button 
+                type="button" 
+                onClick={() => setLeftTab('team')}
+                style={{ flex: 1, padding: '8px', background: leftTab === 'team' ? '#1c252e' : 'transparent', border: '1px solid #2a3848', color: leftTab === 'team' ? '#00e5ff' : '#888', cursor: 'pointer', borderRadius: '4px' }}
+              >Team Chat</button>
+              <button 
+                type="button" 
+                onClick={() => { setLeftTab('personal'); setSelectedContact(null); }}
+                style={{ flex: 1, padding: '8px', background: leftTab === 'personal' ? '#1c252e' : 'transparent', border: '1px solid #2a3848', color: leftTab === 'personal' ? '#00e5ff' : '#888', cursor: 'pointer', borderRadius: '4px' }}
+              >Personal Chat
+                {contacts.reduce((acc, c) => acc + c.unread_count, 0) > 0 && (
+                  <span style={{ marginLeft: '6px', background: '#e11d48', color: '#fff', padding: '2px 6px', borderRadius: '10px', fontSize: '0.7rem' }}>
+                    {contacts.reduce((acc, c) => acc + c.unread_count, 0)}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {leftTab === 'team' ? (
+              <>
+                <div className="chat-input-box" style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '1rem' }}>
+                  {replyTo && (
+                    <div style={{ fontSize: '0.75rem', color: '#00e5ff', display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Replying to {replyTo.user_name}</span>
+                      <button type="button" style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }} onClick={() => setReplyTo(null)}>✕</button>
+                    </div>
+                  )}
+                  <textarea
+                    rows={2}
+                    placeholder="Type a message..."
+                    value={chatDraft}
+                    onChange={(e) => setChatDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendChat();
+                      }
+                    }}
+                    style={{ width: '95%', padding: '6px', borderRadius: '4px', border: '1px solid #2a3848', background: '#0c1014', color: '#fff', resize: 'vertical' }}
                   />
-                );
-              })}
-            </ul>
+                  <button type="button" className="btn-ai-primary" onClick={handleSendChat} style={{ padding: '6px' }}>Send</button>
+                </div>
+
+                <ul className="chat-list" style={{ flex: 1, overflowY: 'auto', marginBottom: '1rem', listStyle: 'none', padding: 0 }}>
+                  {chatMessages.length === 0 && <li className="empty">No messages yet</li>}
+                  {chatMessages.map((msg) => {
+                    const repliedMsg = msg.reply_to_id ? chatMessages.find(m => m.id === msg.reply_to_id) : null;
+                    return (
+                      <li key={msg.id} className="chat-msg" style={{ marginBottom: '0.75rem', padding: '0.5rem', background: '#1c252e', borderRadius: '4px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                          <strong style={{ color: '#00e5ff' }}>{msg.user_name}</strong>
+                          <span style={{ fontSize: '0.7rem', color: '#888' }}>{formatTime(msg.created_at)}</span>
+                        </div>
+                        {repliedMsg && (
+                          <div style={{ fontSize: '0.75rem', color: '#aaa', borderLeft: '2px solid #555', paddingLeft: '4px', marginBottom: '4px' }}>
+                            Replying to <strong>{repliedMsg.user_name}</strong>: {repliedMsg.content.length > 40 ? repliedMsg.content.substring(0, 40) + '...' : repliedMsg.content}
+                          </div>
+                        )}
+                        <p style={{ margin: 0, fontSize: '0.9rem' }}>{msg.content}</p>
+                        <div style={{ textAlign: 'right', marginTop: '4px' }}>
+                          <button type="button" className="btn-ghost" style={{ fontSize: '0.7rem', padding: '2px 6px' }} onClick={() => setReplyTo(msg)}>Reply</button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            ) : (
+              <>
+                {selectedContact ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', marginBottom: '1rem', gap: '10px' }}>
+                      <button type="button" className="btn-ghost" onClick={() => setSelectedContact(null)}>← Back</button>
+                      <h3 style={{ margin: 0 }}>Chat with {selectedContact}</h3>
+                    </div>
+                    <div className="chat-input-box" style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '1rem' }}>
+                      <textarea
+                        rows={2}
+                        placeholder="Type a message..."
+                        value={personalDraft}
+                        onChange={(e) => setPersonalDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            handleSendPersonalChat();
+                          }
+                        }}
+                        style={{ width: '95%', padding: '6px', borderRadius: '4px', border: '1px solid #2a3848', background: '#0c1014', color: '#fff', resize: 'vertical' }}
+                      />
+                      <button type="button" className="btn-ai-primary" onClick={handleSendPersonalChat} style={{ padding: '6px' }}>Send</button>
+                    </div>
+                    <ul className="chat-list" style={{ flex: 1, overflowY: 'auto', marginBottom: '1rem', listStyle: 'none', padding: 0 }}>
+                      {personalMessages.length === 0 && <li className="empty">No messages yet</li>}
+                      {personalMessages.map((msg) => (
+                        <li key={msg.id} className="chat-msg" style={{ marginBottom: '0.75rem', padding: '0.5rem', background: msg.sender_name === userName ? '#2a3848' : '#1c252e', borderRadius: '4px', marginLeft: msg.sender_name === userName ? '20px' : '0', marginRight: msg.sender_name === userName ? '0' : '20px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                            <strong style={{ color: msg.sender_name === userName ? '#a78bfa' : '#00e5ff' }}>{msg.sender_name}</strong>
+                            <span style={{ fontSize: '0.7rem', color: '#888' }}>{formatTime(msg.created_at)}</span>
+                          </div>
+                          <p style={{ margin: 0, fontSize: '0.9rem' }}>{msg.content}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <ul style={{ flex: 1, overflowY: 'auto', listStyle: 'none', padding: 0, margin: 0 }}>
+                    {contacts.length === 0 && <li className="empty">No other users online yet</li>}
+                    {contacts.map((c) => (
+                      <li key={c.user_name} style={{ padding: '10px', borderBottom: '1px solid #2a3848', cursor: 'pointer', display: 'flex', flexDirection: 'column' }} onClick={() => setSelectedContact(c.user_name)}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <strong style={{ fontSize: '1.1rem', color: '#e8eaed' }}>{c.user_name}</strong>
+                          {c.unread_count > 0 && (
+                            <span style={{ background: '#e11d48', color: '#fff', padding: '2px 8px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                              {c.unread_count} new
+                            </span>
+                          )}
+                        </div>
+                        {c.last_message && (
+                          <div style={{ fontSize: '0.85rem', color: '#888', marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {c.last_message}
+                          </div>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
           </aside>
 
           <main className="answer-main">
@@ -463,7 +652,7 @@ export default function Answer({ onNavCode }) {
                             inputMode="numeric"
                             maxLength={3}
                             placeholder="1"
-                            value={optionDrafts[q.number] ?? ''}
+                            value={optionDrafts[q.number] !== undefined ? optionDrafts[q.number] : (saved?.answer_text || '')}
                             onChange={(e) =>
                               setOptionDrafts((prev) => ({
                                 ...prev,
@@ -478,7 +667,7 @@ export default function Answer({ onNavCode }) {
                           <input
                             type="text"
                             placeholder="Why you chose this option..."
-                            value={commentDrafts[q.number] ?? ''}
+                            value={commentDrafts[q.number] !== undefined ? commentDrafts[q.number] : (lastComment?.comment_text || '')}
                             onChange={(e) =>
                               setCommentDrafts((prev) => ({
                                 ...prev,
@@ -529,14 +718,83 @@ export default function Answer({ onNavCode }) {
                   );
                 })}
             </div>
+          </main>
 
-            <section className="comment-log">
-              <h3>Explanation log</h3>
+          <aside className="answer-side right" style={{ background: 'transparent', border: 'none' }}>
+            <h2 style={{ paddingLeft: '1rem' }}>Answer Sheet</h2>
+            <ul className="activity-list" style={{ overflowY: 'auto', padding: '0 1rem' }}>
+              {/* {questions.slice(0, 20).map((q) => { */}
+              {questions.slice(0, 10).map((q) => {
+                const ans = answerByQ[q.number];
+                const cmt = latestCommentByQ[q.number];
+                return (
+                  <li key={q.number} style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '10px 0', borderBottom: '1px solid #1c252e' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <strong style={{ color: '#00e5ff', fontSize: '1.1rem' }}>Q{q.number}</strong>
+                      <input
+                        type="text"
+                        maxLength={3}
+                        style={{ width: '45px', padding: '4px', background: '#0c1014', color: '#fff', border: '1px solid #00e5ff', borderRadius: '4px', textAlign: 'center', fontSize: '1rem', fontWeight: 'bold' }}
+                        value={optionDrafts[q.number] !== undefined ? optionDrafts[q.number] : (ans?.answer_text || '')}
+                        onChange={(e) => setOptionDrafts(prev => ({ ...prev, [q.number]: e.target.value }))}
+                        onBlur={() => handleSave(q.number)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleSave(q.number);
+                            e.target.blur();
+                          }
+                        }}
+                      />
+                    </div>
+                    {cmt && (
+                      <p style={{ fontSize: '0.85rem', color: '#888', margin: 0 }}>
+                        {cmt.comment_text}
+                      </p>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </aside>
+        </div>
+
+        <div className="bottom-sections" style={{ display: 'flex', gap: '1rem', padding: '1rem', marginTop: '2rem', flexWrap: 'nowrap', justifyContent: 'space-between', overflowX: 'auto', alignItems: 'stretch' }}>
+          <aside className="answer-side" style={{ flex: '1 1 0', minWidth: '250px', display: 'flex', flexDirection: 'column' }}>
+            <h2>Recent activity</h2>
+            <ul className="activity-list" style={{ flex: 1, overflowY: 'auto' }}>
+              {recent.length === 0 && <li className="empty">No activity yet</li>}
+              {recent.map((item) => {
+                const q = item.question_number;
+                const currentOption = answerByQ[q]?.answer_text || '';
+                const comment =
+                  item.activity_type === 'commented'
+                    ? item.new_value
+                    : latestCommentByQ[q]?.comment_text || '';
+                const option =
+                  item.activity_type === 'commented'
+                    ? currentOption
+                    : item.new_value || currentOption;
+                return (
+                  <RecentItem
+                    key={item.id}
+                    item={item}
+                    option={option}
+                    comment={comment}
+                  />
+                );
+              })}
+            </ul>
+          </aside>
+
+          <section className="comment-log answer-side" style={{ flex: '1 1 0', minWidth: '250px', display: 'flex', flexDirection: 'column' }}>
+            <h2>Explanation log</h2>
+            <ul className="activity-list" style={{ flex: 1, overflowY: 'auto' }}>
               {comments.length === 0 ? (
-                <p className="empty-feed">No explanations posted yet</p>
+                <li className="empty-feed">No explanations posted yet</li>
               ) : (
                 comments.map((c) => (
-                  <div key={c.id} className="log-row">
+                  <li key={c.id} className="log-row activity-item">
                     <p className="activity-headline">
                       <strong>{c.user_name}</strong> added explanation on{' '}
                       <span className="q-num">Q{c.question_number}</span>
@@ -551,30 +809,34 @@ export default function Answer({ onNavCode }) {
                       Comment — <span className="activity-val">"{c.comment_text}"</span>
                     </div>
                     <time>{formatTime(c.created_at)}</time>
-                  </div>
+                  </li>
                 ))
               )}
-            </section>
-          </main>
+            </ul>
+          </section>
 
-          <aside className="answer-side right">
+          <aside className="answer-side" style={{ flex: '1 1 0', minWidth: '250px', display: 'flex', flexDirection: 'column' }}>
             <h2>Updated activity</h2>
-            <ul className="activity-list">
+            <ul className="activity-list" style={{ flex: 1, overflowY: 'auto' }}>
               {updates.length === 0 && <li className="empty">No updates yet</li>}
               {updates.map((item) => (
                 <UpdateItem key={item.id} item={item} />
               ))}
             </ul>
           </aside>
-          <AiModePanel
-            responses={aiResponses}
-            questions={questions}
-            expandedId={expandedAiId}
-            onToggle={setExpandedAiId}
-            onRecheck={handleRecheckAi}
-            recheckLoading={recheckLoading}
-          />
+
+          <div style={{ flex: '1 1 0', minWidth: '250px', display: 'flex' }}>
+            <AiModePanel
+              responses={aiResponses}
+              questions={questions}
+              expandedId={expandedAiId}
+              onToggle={setExpandedAiId}
+              onRecheck={handleRecheckAi}
+              recheckLoading={recheckLoading}
+            />
+          </div>
         </div>
+
       </div>
     </div>
   );

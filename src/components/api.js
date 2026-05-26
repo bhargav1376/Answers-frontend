@@ -37,3 +37,16 @@ export const deleteCode = (id) =>
   fetchJson(`/api/code/${id}`, { method: 'DELETE' });
 export const verifyAdmin = (body) =>
   fetchJson('/api/admin/verify', { method: 'POST', body: JSON.stringify(body) });
+export const getChatMessages = () => fetchJson('/api/chat');
+export const postChatMessage = (body) =>
+  fetchJson('/api/chat', { method: 'POST', body: JSON.stringify(body) });
+export const loginUser = (body) =>
+  fetchJson('/api/login', { method: 'POST', body: JSON.stringify(body) });
+export const getPersonalChatSummary = (userName) =>
+  fetchJson(`/api/personal_chat/summary?user_name=${encodeURIComponent(userName)}`);
+export const getPersonalChatMessages = (user1, user2) =>
+  fetchJson(`/api/personal_chat/messages?user1=${encodeURIComponent(user1)}&user2=${encodeURIComponent(user2)}`);
+export const postPersonalChatMessage = (body) =>
+  fetchJson('/api/personal_chat/messages', { method: 'POST', body: JSON.stringify(body) });
+export const markPersonalChatRead = (body) =>
+  fetchJson('/api/personal_chat/read', { method: 'POST', body: JSON.stringify(body) });

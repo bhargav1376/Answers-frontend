@@ -507,7 +507,7 @@ export function AiModePanel({ responses, questions, expandedId, onToggle, onRech
   };
 
   return (
-    <aside className="answer-side ai-side">
+    <aside className="answer-side ai-side" style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
       <h2>AI mode</h2>
 
       {lightboxImg && (
@@ -526,7 +526,7 @@ export function AiModePanel({ responses, questions, expandedId, onToggle, onRech
             {sorted.length !== 1 ? 's' : ''} — click title to open
           </p>
 
-          <ul className="activity-list ai-list">
+          <ul className="activity-list ai-list" style={{ flex: 1, overflowY: 'auto' }}>
             {sorted.map((item) => (
               <AiResponseCard
                 key={item.id}

@@ -242,7 +242,7 @@
 /* 3-column layout */
 .answer-layout {
   display: grid;
-  grid-template-columns: 220px 1fr 230px 230px;
+  grid-template-columns: 320px 1fr 320px;
   flex: 1;
   min-height: 0;
   height: calc(100vh - var(--header-height));
@@ -551,7 +551,7 @@
   line-height: 1.5;
 }
 
-.saved-option + .saved-comment {
+.saved-option+.saved-comment {
   margin-top: 0;
   padding-left: 1rem;
   border-left: 1px solid #243040;
@@ -577,7 +577,6 @@
 
 /* Explanation log */
 .comment-log {
-  margin-top: 2rem;
   padding-top: 1.25rem;
   border-top: 1px solid #243040;
 }

@@ -435,7 +435,13 @@ export default function Answer({ onNavCode }) {
         getUpdateActivity(),
         getAiResponses().catch(() => []),
         getChatMessages().catch(() => []),
-        getPersonalChatSummary(userName).catch(() => []),
+        getPersonalChatSummary(userName).catch((e) => {
+          if (e.message === 'User deleted') {
+            localStorage.removeItem(NAME_KEY);
+            setUserName('');
+          }
+          return [];
+        }),
       ]);
       setQuestions(q);
       setAnswers(a);
@@ -587,6 +593,10 @@ export default function Answer({ onNavCode }) {
       await deleteUser({ admin_id: adminId, admin_password: adminPassword, target_user: targetUser });
       setDeleteUserOpen(false);
       await loadAll();
+      if (targetUser === userName) {
+        localStorage.removeItem(NAME_KEY);
+        setUserName('');
+      }
     } catch (e) {
       setDeleteUserError(e.message);
     } finally {

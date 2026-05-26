@@ -22,6 +22,7 @@ import {
   deleteAllPersonalData,
   checkUser,
   renameUser,
+  deleteUser,
 } from './api';
 import { AiChatButton, AiChatModal, AiModePanel, QuestionAiResponses } from './ai-chat';
 
@@ -169,6 +170,76 @@ function RecentItem({ item, option, comment }) {
   );
 }
 
+function DeleteUserModal({ open, onClose, onConfirm, loading, error, users }) {
+  const [adminId, setAdminId] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [targetUser, setTargetUser] = useState('');
+
+  useEffect(() => {
+    if (open) {
+      setAdminId('');
+      setAdminPassword('');
+      setTargetUser('');
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  return (
+    <div className="modal-overlay" onClick={onClose} role="presentation">
+      <div className="modal-card" onClick={(e) => e.stopPropagation()} role="dialog">
+        <h2>Delete User</h2>
+        <p>This completely removes a user and all of their data. Cannot be undone.</p>
+        {error && <div className="modal-error">{error}</div>}
+        <label>
+          Select User
+          <select
+            value={targetUser}
+            onChange={(e) => setTargetUser(e.target.value)}
+            style={{ display: 'block', width: '95%', marginTop: '0.35rem', padding: '10px 12px', border: '1px solid #2a3848', borderRadius: '8px', background: '#0c1014', color: '#e8eaed', fontSize: '0.95rem' }}
+          >
+            <option value="">-- Select a user --</option>
+            {users.map(u => (
+              <option key={u.user_name} value={u.user_name}>{u.user_name}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          ID
+          <input
+            type="text"
+            placeholder="Admin ID"
+            value={adminId}
+            onChange={(e) => setAdminId(e.target.value)}
+          />
+        </label>
+        <label>
+          Password
+          <input
+            type="password"
+            placeholder="Admin password"
+            value={adminPassword}
+            onChange={(e) => setAdminPassword(e.target.value)}
+          />
+        </label>
+        <div className="modal-actions">
+          <button type="button" className="btn-ghost" onClick={onClose} disabled={loading}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn-delete-confirm"
+            disabled={loading || !adminId || !adminPassword || !targetUser}
+            onClick={() => onConfirm(adminId, adminPassword, targetUser)}
+          >
+            {loading ? 'Deleting…' : 'Delete User'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DeleteModal({ open, onClose, onConfirm, loading, error, title, description, confirmText }) {
   const [adminId, setAdminId] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
@@ -269,11 +340,15 @@ export default function Answer({ onNavCode }) {
   const [deleteTarget, setDeleteTarget] = useState('all'); // 'all' or 'personal'
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState('');
-  
+
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameLoading, setRenameLoading] = useState(false);
   const [renameError, setRenameError] = useState('');
-  
+
+  const [deleteUserOpen, setDeleteUserOpen] = useState(false);
+  const [deleteUserLoading, setDeleteUserLoading] = useState(false);
+  const [deleteUserError, setDeleteUserError] = useState('');
+
   const [aiOpen, setAiOpen] = useState(false);
   const [aiResponses, setAiResponses] = useState([]);
   const [expandedAiId, setExpandedAiId] = useState(null);
@@ -505,6 +580,20 @@ export default function Answer({ onNavCode }) {
     }
   };
 
+  const handleDeleteUser = async (adminId, adminPassword, targetUser) => {
+    setDeleteUserLoading(true);
+    setDeleteUserError('');
+    try {
+      await deleteUser({ admin_id: adminId, admin_password: adminPassword, target_user: targetUser });
+      setDeleteUserOpen(false);
+      await loadAll();
+    } catch (e) {
+      setDeleteUserError(e.message);
+    } finally {
+      setDeleteUserLoading(false);
+    }
+  };
+
   const handleSave = async (questionNumber) => {
     const option = (optionDrafts[questionNumber] ?? '').trim();
     const explanation = (commentDrafts[questionNumber] ?? '').trim();
@@ -568,6 +657,13 @@ export default function Answer({ onNavCode }) {
           <button
             type="button"
             className="btn-danger-outline"
+            onClick={() => setDeleteUserOpen(true)}
+          >
+            Delete user
+          </button>
+          <button
+            type="button"
+            className="btn-danger-outline"
             onClick={() => { setDeleteTarget('all'); setDeleteOpen(true); }}
           >
             Delete data
@@ -583,6 +679,15 @@ export default function Answer({ onNavCode }) {
         loading={renameLoading}
         error={renameError}
         currentName={userName}
+      />
+
+      <DeleteUserModal
+        open={deleteUserOpen}
+        onClose={() => !deleteUserLoading && setDeleteUserOpen(false)}
+        onConfirm={handleDeleteUser}
+        loading={deleteUserLoading}
+        error={deleteUserError}
+        users={contacts}
       />
 
       <DeleteModal
@@ -618,22 +723,23 @@ export default function Answer({ onNavCode }) {
         <div className="answer-layout">
           <aside className="answer-side chat-side left" style={{ display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', gap: '10px', marginBottom: '1rem' }}>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 onClick={() => setLeftTab('team')}
                 style={{ flex: 1, padding: '8px', background: leftTab === 'team' ? '#1c252e' : 'transparent', border: '1px solid #2a3848', color: leftTab === 'team' ? '#00e5ff' : '#888', cursor: 'pointer', borderRadius: '4px' }}
               >Team Chat</button>
-              <button 
-                type="button" 
-                onClick={() => { setLeftTab('personal'); setSelectedContact(null); }}
-                style={{ flex: 1, padding: '8px', background: leftTab === 'personal' ? '#1c252e' : 'transparent', border: '1px solid #2a3848', color: leftTab === 'personal' ? '#00e5ff' : '#888', cursor: 'pointer', borderRadius: '4px' }}
-              >Personal Chat
+              <div className="tab-btn-container">
+                <button
+                  type="button"
+                  onClick={() => { setLeftTab('personal'); setSelectedContact(null); }}
+                  style={{ flex: 1, width: '100%', padding: '8px', background: leftTab === 'personal' ? '#1c252e' : 'transparent', border: '1px solid #2a3848', color: leftTab === 'personal' ? '#00e5ff' : '#888', cursor: 'pointer', borderRadius: '4px' }}
+                >Personal Chat</button>
                 {contacts.reduce((acc, c) => acc + c.unread_count, 0) > 0 && (
-                  <span style={{ marginLeft: '6px', background: '#e11d48', color: '#fff', padding: '2px 6px', borderRadius: '10px', fontSize: '0.7rem' }}>
+                  <span className="unread-badge-pop">
                     {contacts.reduce((acc, c) => acc + c.unread_count, 0)}
                   </span>
                 )}
-              </button>
+              </div>
             </div>
 
             {leftTab === 'team' ? (
@@ -648,6 +754,7 @@ export default function Answer({ onNavCode }) {
                   <textarea
                     rows={2}
                     placeholder="Type a message..."
+                    className='text-area-value'
                     value={chatDraft}
                     onChange={(e) => setChatDraft(e.target.value)}
                     onKeyDown={(e) => {
@@ -656,7 +763,6 @@ export default function Answer({ onNavCode }) {
                         handleSendChat();
                       }
                     }}
-                    style={{ width: '95%', padding: '6px', borderRadius: '4px', border: '1px solid #2a3848', background: '#0c1014', color: '#fff', resize: 'vertical' }}
                   />
                   <button type="button" className="btn-ai-primary" onClick={handleSendChat} style={{ padding: '6px' }}>Send</button>
                 </div>
@@ -697,6 +803,7 @@ export default function Answer({ onNavCode }) {
                       <textarea
                         rows={2}
                         placeholder="Type a message..."
+                        className='text-area-value'
                         value={personalDraft}
                         onChange={(e) => setPersonalDraft(e.target.value)}
                         onKeyDown={(e) => {
@@ -705,7 +812,6 @@ export default function Answer({ onNavCode }) {
                             handleSendPersonalChat();
                           }
                         }}
-                        style={{ width: '95%', padding: '6px', borderRadius: '4px', border: '1px solid #2a3848', background: '#0c1014', color: '#fff', resize: 'vertical' }}
                       />
                       <button type="button" className="btn-ai-primary" onClick={handleSendPersonalChat} style={{ padding: '6px' }}>Send</button>
                     </div>
@@ -729,24 +835,24 @@ export default function Answer({ onNavCode }) {
                     </div>
                     <ul style={{ flex: 1, overflowY: 'auto', listStyle: 'none', padding: 0, margin: 0 }}>
                       {contacts.length === 0 && <li className="empty">No other users online yet</li>}
-                    {contacts.map((c) => (
-                      <li key={c.user_name} style={{ padding: '10px', borderBottom: '1px solid #2a3848', cursor: 'pointer', display: 'flex', flexDirection: 'column' }} onClick={() => setSelectedContact(c.user_name)}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <strong style={{ fontSize: '1.1rem', color: '#e8eaed' }}>{c.user_name}</strong>
-                          {c.unread_count > 0 && (
-                            <span style={{ background: '#e11d48', color: '#fff', padding: '2px 8px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 'bold' }}>
-                              {c.unread_count} new
-                            </span>
-                          )}
-                        </div>
-                        {c.last_message && (
-                          <div style={{ fontSize: '0.85rem', color: '#888', marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {c.last_message}
+                      {contacts.map((c) => (
+                        <li key={c.user_name} style={{ padding: '10px', borderBottom: '1px solid #2a3848', cursor: 'pointer', display: 'flex', flexDirection: 'column' }} onClick={() => setSelectedContact(c.user_name)}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <strong style={{ fontSize: '1.1rem', color: '#e8eaed' }}>{c.user_name}</strong>
+                            {c.unread_count > 0 && (
+                              <span className="contact-unread-badge">
+                                {c.unread_count} new
+                              </span>
+                            )}
                           </div>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
+                          {c.last_message && (
+                            <div style={{ fontSize: '0.85rem', color: '#888', marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {c.last_message}
+                            </div>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 )}
               </>

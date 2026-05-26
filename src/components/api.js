@@ -27,6 +27,8 @@ export const deleteAllData = (body) =>
   fetchJson('/api/admin/delete-all', { method: 'POST', body: JSON.stringify(body) });
 export const deleteAllPersonalData = (body) =>
   fetchJson('/api/admin/delete-personal', { method: 'POST', body: JSON.stringify(body) });
+export const deleteUser = (body) =>
+  fetchJson('/api/admin/delete-user', { method: 'POST', body: JSON.stringify(body) });
 export const checkUser = (userName) =>
   fetchJson(`/api/user/check?user_name=${encodeURIComponent(userName)}`);
 export const renameUser = (body) =>

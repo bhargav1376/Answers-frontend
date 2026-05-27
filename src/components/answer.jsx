@@ -623,7 +623,7 @@ export default function Answer({ onNavCode }) {
       localStorage.setItem(NAME_KEY, newName);
       setUserName(newName);
       setRenameOpen(false);
-      await loadAll();
+      await loadAll(newName);
     } catch (e) {
       setRenameError(e.message);
     } finally {

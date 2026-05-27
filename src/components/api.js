@@ -54,6 +54,10 @@ export const pingUser = (body) =>
   fetchJson('/api/user/ping', { method: 'POST', body: JSON.stringify(body) });
 export const getPersonalChatSummary = (userName) =>
   fetchJson(`/api/personal_chat/summary?user_name=${encodeURIComponent(userName)}`);
+export const getExamLink = () =>
+  fetchJson('/api/settings/exam_link');
+export const saveExamLink = (body) =>
+  fetchJson('/api/settings/exam_link', { method: 'POST', body: JSON.stringify(body) });
 export const getPersonalChatMessages = (user1, user2) =>
   fetchJson(`/api/personal_chat/messages?user1=${encodeURIComponent(user1)}&user2=${encodeURIComponent(user2)}`);
 export const postPersonalChatMessage = (body) =>

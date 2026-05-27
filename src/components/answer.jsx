@@ -24,6 +24,8 @@ import {
   renameUser,
   deleteUser,
   pingUser,
+  getExamLink,
+  saveExamLink,
 } from './api';
 import { AiChatButton, AiChatModal, AiModePanel, QuestionAiResponses } from './ai-chat';
 
@@ -92,9 +94,9 @@ function NameGate({ onSubmit }) {
         {error && (
           <div style={{ color: '#e11d48', fontSize: '0.8rem', marginTop: '8px', marginBottom: '8px' }}>
             {error}
-            <div style={{ marginTop: '4px' }}>
+            {/* <div style={{ marginTop: '4px' }}>
               <button type="button" className="btn-ghost" style={{ fontSize: '0.8rem' }} onClick={() => onSubmit(name.trim())}>Force Login</button>
-            </div>
+            </div> */}
           </div>
         )}
         <button type="button" disabled={!name.trim() || loading} onClick={handleSubmit} style={{ marginTop: error ? 0 : '16px' }}>
@@ -187,53 +189,78 @@ function DeleteUserModal({ open, onClose, onConfirm, loading, error, users }) {
   if (!open) return null;
 
   return (
-    <div className="modal-overlay" onClick={onClose} role="presentation">
-      <div className="modal-card" onClick={(e) => e.stopPropagation()} role="dialog">
-        <h2>Delete User</h2>
-        <p>This completely removes a user and all of their data. Cannot be undone.</p>
-        {error && <div className="modal-error">{error}</div>}
+    <div className="modal-overlay">
+      <div className="modal-card">
+        <h3>Delete User & All Data</h3>
+        <p style={{ fontSize: '0.85rem', color: '#aaa', marginBottom: '1rem' }}>This will delete the user and all their answers, comments, and messages.</p>
+
+
         <label>
-          Select User
+          User to Delete (Username)
           <select
             value={targetUser}
             onChange={(e) => setTargetUser(e.target.value)}
-            style={{ display: 'block', width: '95%', marginTop: '0.35rem', padding: '10px 12px', border: '1px solid #2a3848', borderRadius: '8px', background: '#0c1014', color: '#e8eaed', fontSize: '0.95rem' }}
+            style={{ display: 'block', width: '100%', marginTop: '0.35rem', padding: '10px 12px', border: '1px solid #2a3848', borderRadius: '8px', background: '#0c1014', color: '#e8eaed', fontSize: '0.95rem' }}
           >
             <option value="">-- Select a user --</option>
-            {users.map(u => (
+            {users && users.map(u => (
               <option key={u.user_name} value={u.user_name}>{u.user_name}</option>
             ))}
           </select>
         </label>
+
+
         <label>
-          ID
-          <input
-            type="text"
-            placeholder="Admin ID"
-            value={adminId}
-            onChange={(e) => setAdminId(e.target.value)}
-          />
+          Admin ID
+          <input type="text" value={adminId} onChange={(e) => { setAdminId(e.target.value); }} />
         </label>
+
         <label>
-          Password
-          <input
-            type="password"
-            placeholder="Admin password"
-            value={adminPassword}
-            onChange={(e) => setAdminPassword(e.target.value)}
-          />
+          Admin Password
+          <input type="password" value={adminPassword} onChange={(e) => { setAdminPassword(e.target.value); }} />
         </label>
+
+
+
+        {error && <div className="modal-error">{error}</div>}
+
         <div className="modal-actions">
-          <button type="button" className="btn-ghost" onClick={onClose} disabled={loading}>
-            Cancel
+          <button type="button" className="btn-ghost" onClick={onClose} disabled={loading}>Cancel</button>
+          <button type="button" className="btn-danger-outline" disabled={!adminId || !adminPassword || !targetUser || loading} onClick={() => onConfirm(adminId, adminPassword, targetUser)}>
+            {loading ? 'Deleting...' : 'Delete User'}
           </button>
-          <button
-            type="button"
-            className="btn-delete-confirm"
-            disabled={loading || !adminId || !adminPassword || !targetUser}
-            onClick={() => onConfirm(adminId, adminPassword, targetUser)}
-          >
-            {loading ? 'Deleting…' : 'Delete User'}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminAuthModal({ open, onClose, onConfirm, loading, error, title }) {
+  const [adminPassword, setAdminPassword] = useState('');
+
+  useEffect(() => {
+    if (open) setAdminPassword('');
+  }, [open]);
+
+  if (!open) return null;
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal-card">
+        <h3>{title}</h3>
+        <p style={{ fontSize: '0.85rem', color: '#aaa', marginBottom: '1rem' }}>Admin authentication required.</p>
+
+        <label>
+          Admin Password
+          <input type="password" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && adminPassword && !loading && onConfirm(adminPassword)} autoFocus />
+        </label>
+
+        {error && <div className="modal-error">{error}</div>}
+
+        <div className="modal-actions">
+          <button type="button" className="btn-ghost" onClick={onClose} disabled={loading}>Cancel</button>
+          <button type="button" className="btn-ai-primary" disabled={!adminPassword || loading} onClick={() => onConfirm(adminPassword)}>
+            {loading ? 'Verifying...' : 'Submit'}
           </button>
         </div>
       </div>
@@ -346,6 +373,12 @@ export default function Answer({ onNavCode }) {
   const [renameLoading, setRenameLoading] = useState(false);
   const [renameError, setRenameError] = useState('');
 
+  const [linkInput, setLinkInput] = useState('');
+  const [globalExamLink, setGlobalExamLink] = useState('');
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState('');
+
   const [deleteUserOpen, setDeleteUserOpen] = useState(false);
   const [deleteUserLoading, setDeleteUserLoading] = useState(false);
   const [deleteUserError, setDeleteUserError] = useState('');
@@ -426,9 +459,11 @@ export default function Answer({ onNavCode }) {
     });
   };
 
-  const loadAll = useCallback(async () => {
+  const loadAll = useCallback(async (overrideName) => {
+    const activeName = typeof overrideName === 'string' ? overrideName : userName;
+    if (!activeName) return;
     try {
-      const [q, a, c, r, u, ai, chatMsgs, contactsSummary] = await Promise.all([
+      const [q, a, c, r, u, ai, chatMsgs, contactsSummary, linkData] = await Promise.all([
         getQuestions(),
         getAnswers(),
         getComments(),
@@ -436,13 +471,14 @@ export default function Answer({ onNavCode }) {
         getUpdateActivity(),
         getAiResponses().catch(() => []),
         getChatMessages().catch(() => []),
-        getPersonalChatSummary(userName).catch((e) => {
+        getPersonalChatSummary(activeName).catch((e) => {
           if (e.message === 'User deleted') {
             localStorage.removeItem(NAME_KEY);
             setUserName('');
           }
           return [];
         }),
+        getExamLink().catch(() => ({ exam_link: '' })),
       ]);
       setQuestions(q);
       setAnswers(a);
@@ -452,18 +488,19 @@ export default function Answer({ onNavCode }) {
       setAiResponses(ai);
       setChatMessages(chatMsgs);
       setContacts(contactsSummary || []);
+      setGlobalExamLink(linkData?.exam_link || '');
       setError('');
     } catch (e) {
       setError(e.message || 'Failed to load. Is backend running on port 3030?');
     }
-  }, []);
+  }, [userName]);
 
   useEffect(() => {
     if (!userName) return;
     loadAll();
     const id = setInterval(loadAll, 3000);
     const pingId = setInterval(() => {
-      pingUser({ user_name: userName }).catch(() => {});
+      pingUser({ user_name: userName }).catch(() => { });
     }, 10000);
     return () => {
       clearInterval(id);
@@ -476,7 +513,7 @@ export default function Answer({ onNavCode }) {
     setUserName(name);
     try {
       await loginUser({ user_name: name });
-      await loadAll();
+      await loadAll(name);
     } catch (e) {
       console.error('Failed to register user:', e);
     }
@@ -612,6 +649,21 @@ export default function Answer({ onNavCode }) {
     }
   };
 
+  const handleAuthSubmit = async (password) => {
+    setAuthLoading(true);
+    setAuthError('');
+    try {
+      await saveExamLink({ admin_password: password, exam_link: linkInput.trim() });
+      setAuthModalOpen(false);
+      setLinkInput('');
+      await loadAll(userName);
+    } catch (e) {
+      setAuthError(e.message || 'Failed to submit link');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
   const handleSave = async (questionNumber) => {
     const option = (optionDrafts[questionNumber] ?? '').trim();
     const explanation = (commentDrafts[questionNumber] ?? '').trim();
@@ -658,9 +710,10 @@ export default function Answer({ onNavCode }) {
     <div className="answer-app">
       <header className="answer-top answer-top-fixed">
         <h1>Answer Sheet</h1>
-        <span className="answer-user">
+        <span className="answer-user" style={{ marginRight: '1rem' }}>
           Hi, <strong>{userName}</strong>
         </span>
+
         <button type="button" className="btn-ghost" onClick={onNavCode}>
           Code
         </button>
@@ -701,11 +754,26 @@ export default function Answer({ onNavCode }) {
 
       <DeleteUserModal
         open={deleteUserOpen}
-        onClose={() => !deleteUserLoading && setDeleteUserOpen(false)}
+        onClose={() => {
+          setDeleteUserOpen(false);
+          setDeleteUserError('');
+        }}
         onConfirm={handleDeleteUser}
         loading={deleteUserLoading}
         error={deleteUserError}
         users={contacts}
+      />
+
+      <AdminAuthModal
+        open={authModalOpen}
+        onClose={() => {
+          setAuthModalOpen(false);
+          setAuthError('');
+        }}
+        onConfirm={handleAuthSubmit}
+        loading={authLoading}
+        error={authError}
+        title="Submit Global Exam Link"
       />
 
       <DeleteModal
@@ -737,6 +805,45 @@ export default function Answer({ onNavCode }) {
 
       <div className="answer-body">
         {error && <div className="answer-error">{error}</div>}
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '16px', background: '#151c24', borderBottom: '1px solid #243040', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ color: '#aaa', fontWeight: 'bold', fontSize: '0.9rem' }}>Exam link</span>
+            <input
+              type="text"
+              placeholder="Enter link..."
+              value={linkInput}
+              onChange={(e) => setLinkInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && linkInput.trim() && setAuthModalOpen(true)}
+              className="text-area-value"
+              style={{ width: '250px', height: '26px', paddingLeft: '10px', marginLeft: '10px', marginRight: '10px', marginBottom: 0 }}
+            />
+            <button
+              type="button"
+              className="btn-ai-primary"
+              onClick={() => setAuthModalOpen(true)}
+              disabled={!linkInput.trim()}
+            >
+              Submit
+            </button>
+          </div>
+
+          {globalExamLink && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', borderLeft: '1px solid #2a3848', paddingLeft: '16px' }}>
+              <span style={{ color: '#00e5ff', textDecoration: 'underline', fontSize: '0.95rem', maxWidth: '300px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {globalExamLink}
+              </span>
+              <button
+                type="button"
+                className="btn-ghost"
+                style={{ padding: '6px 12px', fontSize: '0.85rem' }}
+                onClick={() => navigator.clipboard.writeText(globalExamLink)}
+              >
+                Copy Link
+              </button>
+            </div>
+          )}
+        </div>
 
         <div className="answer-layout">
           <aside className="answer-side chat-side left" style={{ display: 'flex', flexDirection: 'column' }}>
@@ -817,12 +924,11 @@ export default function Answer({ onNavCode }) {
                       <button type="button" className="btn-ghost" onClick={() => setSelectedContact(null)} style={{ padding: '4px 8px', marginRight: '10px' }}>&larr; Back</button>
                       <div className="avatar">
                         {selectedContact.charAt(0).toUpperCase()}
-                        <span className={`status-dot ${
-                          contacts.find(c => c.user_name === selectedContact) && 
-                          (new Date() - new Date(contacts.find(c => c.user_name === selectedContact).last_seen) < 30000) 
-                            ? 'online' 
-                            : 'offline'
-                        }`}></span>
+                        <span className={`status-dot ${contacts.find(c => c.user_name === selectedContact) &&
+                          (new Date() - new Date(contacts.find(c => c.user_name === selectedContact).last_seen) < 30000)
+                          ? 'online'
+                          : 'offline'
+                          }`}></span>
                       </div>
                       <div>
                         <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#00e5ff' }}>{selectedContact}</h3>
@@ -908,7 +1014,7 @@ export default function Answer({ onNavCode }) {
             <div className="question-list">
               {/* {questions.map((q) => { */}
               {questions
-                .slice(0, showAllQuestions ? questions.length : 10)
+                .slice(0, showAllQuestions ? questions.length : 20)
                 .map((q) => {
                   const saved = answerByQ[q.number];
                   const lastComment = latestCommentByQ[q.number];
@@ -1000,7 +1106,7 @@ export default function Answer({ onNavCode }) {
             <h2 style={{ paddingLeft: '1rem' }}>Answer Sheet</h2>
             <ul className="activity-list" style={{ overflowY: 'auto', padding: '0 1rem' }}>
               {/* {questions.slice(0, 20).map((q) => { */}
-              {questions.slice(0, 10).map((q) => {
+              {questions.slice(0, 20).map((q) => {
                 const ans = answerByQ[q.number];
                 const cmt = latestCommentByQ[q.number];
                 return (

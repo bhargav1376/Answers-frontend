@@ -94,9 +94,9 @@ function NameGate({ onSubmit }) {
         {error && (
           <div style={{ color: '#e11d48', fontSize: '0.8rem', marginTop: '8px', marginBottom: '8px' }}>
             {error}
-            {/* <div style={{ marginTop: '4px' }}>
+            <div style={{ marginTop: '4px' }}>
               <button type="button" className="btn-ghost" style={{ fontSize: '0.8rem' }} onClick={() => onSubmit(name.trim())}>Force Login</button>
-            </div> */}
+            </div>
           </div>
         )}
         <button type="button" disabled={!name.trim() || loading} onClick={handleSubmit} style={{ marginTop: error ? 0 : '16px' }}>
@@ -344,7 +344,7 @@ function UpdateItem({ item }) {
   );
 }
 
-export default function Answer({ onNavCode }) {
+export default function Answer({ onNavCode, onNavImages }) {
   const [userName, setUserName] = useState(() => localStorage.getItem(NAME_KEY) || '');
   const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState([]);
@@ -716,6 +716,9 @@ export default function Answer({ onNavCode }) {
 
         <button type="button" className="btn-ghost" onClick={onNavCode}>
           Code
+        </button>
+        <button type="button" className="btn-ghost" onClick={onNavImages}>
+          Images
         </button>
         <button
           type="button"

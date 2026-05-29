@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import Answer from './components/answer';
 import CodePage from './components/code';
+import ImagesPage from './components/images';
 import './App.css';
 
 function App() {
@@ -10,7 +11,11 @@ function App() {
     return <CodePage onNavBack={() => setView('answer')} />;
   }
 
-  return <Answer onNavCode={() => setView('code')} />;
+  if (view === 'images') {
+    return <ImagesPage onNavBack={() => setView('answer')} />;
+  }
+
+  return <Answer onNavCode={() => setView('code')} onNavImages={() => setView('images')} />;
 }
 
 export default App;

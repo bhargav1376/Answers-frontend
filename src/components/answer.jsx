@@ -1,16 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import './answer.css';
 import {
-  getAnswers,
-  getComments,
-  getQuestions,
-  getRecentActivity,
-  getUpdateActivity,
   getAiResponses,
+  clearAiChat,
+  clearPersonalChat,
   deleteAllData,
-  postComment,
-  saveAnswer,
-  callOpenAI,
+  callDeepAI,
   saveAiResponse,
   getChatMessages,
   postChatMessage,
@@ -19,40 +14,136 @@ import {
   getPersonalChatMessages,
   postPersonalChatMessage,
   markPersonalChatRead,
-  deleteAllPersonalData,
   checkUser,
   renameUser,
   deleteUser,
   pingUser,
-  getExamLink,
-  saveExamLink,
 } from './api';
-import { AiChatButton, AiChatModal, AiModePanel, QuestionAiResponses } from './ai-chat';
 
 const NAME_KEY = 'answer_sheet_user_name';
+
+const PRESET_STICKERS = [
+  { id: 'heart', display: '❤️' }, { id: 'laugh', display: '😂' }, { id: 'thumbs_up', display: '👍' },
+  { id: 'fire', display: '🔥' }, { id: 'rocket', display: '🚀' }, { id: 'party', display: '🎉' },
+  { id: 'clap', display: '👏' }, { id: 'partying_face', display: '🥳' }, { id: 'mind_blown', display: '🤯' },
+  { id: 'cool', display: '😎' }, { id: 'alien', display: '👽' }, { id: 'ghost', display: '👻' },
+  { id: 'smile', display: '😊' }, { id: 'sad', display: '😢' }, { id: 'angry', display: '😡' },
+  { id: 'poop', display: '💩' }, { id: 'skull', display: '💀' }, { id: 'star', display: '⭐' },
+  { id: 'crying', display: '😭' }, { id: 'pleading', display: '🥺' }, { id: 'sweat_smile', display: '😅' },
+  { id: 'thinking', display: '🤔' }, { id: 'shush', display: '🤫' }, { id: 'clown', display: '🤡' }
+];
 
 function formatTime(iso) {
   if (!iso) return '';
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function optionMetaLabel(saved) {
-  if (!saved) return null;
-  const created = new Date(saved.created_at).getTime();
-  const updated = new Date(saved.updated_at).getTime();
-  const wasUpdated = updated - created > 1500;
-  return wasUpdated
-    ? `${saved.user_name} updated option`
-    : `${saved.user_name} set option`;
+function Typewriter({ text }) {
+  const [displayed, setDisplayed] = useState('');
+  
+  useEffect(() => {
+    setDisplayed('');
+    if (!text) return;
+    
+    // Split by spaces but preserve whitespace tokens
+    const tokens = text.split(/(\s+)/);
+    let i = 0;
+    
+    const interval = setInterval(() => {
+      setDisplayed((prev) => prev + (tokens[i] || ''));
+      i++;
+      if (i >= tokens.length) clearInterval(interval);
+    }, 50);
+    
+    return () => clearInterval(interval);
+  }, [text]);
+
+  return <span className="natural-ai-text">{displayed}</span>;
 }
 
-function formatQuestionLabel(number, text) {
-  const cleaned = (text || '')
-    .replace(/— fill in the blank/gi, '')
-    .replace(/fill in the blank/gi, '')
-    .replace(/^Question\s+\d+\s*[-—]?\s*/i, '')
-    .trim();
-  return cleaned ? `Q${number} — ${cleaned}` : `Q${number} — Option & explanation`;
+function TypingIndicator() {
+  return (
+    <div className="typing-indicator">
+      <span></span>
+      <span></span>
+      <span></span>
+    </div>
+  );
+}
+
+function cleanAiText(text) {
+  if (!text) return '';
+  const answerMatch = text.match(/ANSWER:\s*([\s\S]*?)(?=EXPLANATION:|$)/i) || text.match(/OPTION:\s*([\s\S]*?)(?=EXPLANATION:|$)/i);
+  if (answerMatch) {
+    return answerMatch[1].trim();
+  }
+  const explainIndex = text.toUpperCase().indexOf('EXPLANATION:');
+  if (explainIndex !== -1) {
+    return text.substring(0, explainIndex).trim();
+  }
+  return text;
+}
+
+function CustomAudioPlayer({ src }) {
+  const [playing, setPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const audioRef = useRef(null);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    
+    const updateProgress = () => setProgress((audio.currentTime / audio.duration) * 100);
+    const updateDuration = () => setDuration(audio.duration);
+    const handleEnded = () => { setPlaying(false); setProgress(0); };
+
+    audio.addEventListener('timeupdate', updateProgress);
+    audio.addEventListener('loadedmetadata', updateDuration);
+    audio.addEventListener('ended', handleEnded);
+
+    return () => {
+      audio.removeEventListener('timeupdate', updateProgress);
+      audio.removeEventListener('loadedmetadata', updateDuration);
+      audio.removeEventListener('ended', handleEnded);
+    };
+  }, []);
+
+  const togglePlay = () => {
+    if (playing) audioRef.current.pause();
+    else audioRef.current.play();
+    setPlaying(!playing);
+  };
+
+  const handleSeek = (e) => {
+    if (!audioRef.current || !audioRef.current.duration) return;
+    const bounds = e.currentTarget.getBoundingClientRect();
+    const percent = (e.clientX - bounds.left) / bounds.width;
+    audioRef.current.currentTime = percent * audioRef.current.duration;
+    setProgress(percent * 100);
+  };
+
+  const formatSecs = (secs) => {
+    if (isNaN(secs) || !isFinite(secs)) return '0:00';
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
+
+  return (
+    <div className="custom-audio-player">
+      <audio ref={audioRef} src={src} preload="metadata" />
+      <button className="audio-play-btn" onClick={togglePlay}>
+        {playing ? <i className="fa fa-pause"></i> : <i className="fa fa-play"></i>}
+      </button>
+      <div className="audio-progress-bar" onClick={handleSeek}>
+        <div className="audio-progress-fill" style={{ width: `${progress}%` }}></div>
+      </div>
+      <span className="audio-time">
+        {formatSecs(audioRef.current ? audioRef.current.currentTime : 0)} / {formatSecs(duration)}
+      </span>
+    </div>
+  );
 }
 
 function NameGate({ onSubmit }) {
@@ -66,42 +157,20 @@ function NameGate({ onSubmit }) {
     setError('');
     try {
       const res = await checkUser(name.trim());
-      if (res.exists) {
-        setError('This name is already taken. If this is you returning, click "Force Login".');
-      } else {
-        onSubmit(name.trim());
-      }
-    } catch (e) {
-      setError('Failed to check name: ' + e.message);
-    } finally {
-      setLoading(false);
-    }
+      if (res.exists) setError('This name is already taken. Click "Force Login" if this is you.');
+      else onSubmit(name.trim());
+    } catch (e) { setError('Failed to check name: ' + e.message); } 
+    finally { setLoading(false); }
   };
 
   return (
-    <div className="name-gate">
-      <div className="name-gate-card">
-        <h1>Answer Sheet</h1>
+    <div className="name-gate glass-bg">
+      <div className="name-gate-card glass-panel">
+        <h1>Welcome to Chat</h1>
         <p>Enter your name to continue</p>
-        <input
-          type="text"
-          placeholder="Your name"
-          value={name}
-          onChange={(e) => { setName(e.target.value); setError(''); }}
-          onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-          autoFocus
-        />
-        {error && (
-          <div style={{ color: '#e11d48', fontSize: '0.8rem', marginTop: '8px', marginBottom: '8px' }}>
-            {error}
-            <div style={{ marginTop: '4px' }}>
-              <button type="button" className="btn-ghost" style={{ fontSize: '0.8rem' }} onClick={() => onSubmit(name.trim())}>Force Login</button>
-            </div>
-          </div>
-        )}
-        <button type="button" disabled={!name.trim() || loading} onClick={handleSubmit} style={{ marginTop: error ? 0 : '16px' }}>
-          {loading ? 'Checking...' : 'Continue'}
-        </button>
+        <input type="text" placeholder="Your name" value={name} onChange={(e) => { setName(e.target.value); setError(''); }} onKeyDown={(e) => e.key === 'Enter' && handleSubmit()} autoFocus />
+        {error && <div className="error-text">{error}<div style={{ marginTop: '8px' }}><button type="button" className="btn-glass" onClick={() => onSubmit(name.trim())}>Force Login</button></div></div>}
+        <button type="button" className="btn-primary" disabled={!name.trim() || loading} onClick={handleSubmit}>{loading ? 'Checking...' : 'Continue'}</button>
       </div>
     </div>
   );
@@ -109,67 +178,23 @@ function NameGate({ onSubmit }) {
 
 function RenameModal({ open, onClose, onConfirm, loading, error, currentName }) {
   const [newName, setNewName] = useState('');
-
-  useEffect(() => {
-    if (open) setNewName('');
-  }, [open]);
-
+  useEffect(() => { if (open) setNewName(''); }, [open]);
   if (!open) return null;
-
   return (
-    <div className="modal-overlay" onClick={onClose} role="presentation">
-      <div className="modal-card" onClick={(e) => e.stopPropagation()} role="dialog">
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-card glass-panel" onClick={(e) => e.stopPropagation()}>
         <h2>Rename User</h2>
-        <p>Change your display name ({currentName}) across all your previous chats and answers.</p>
+        <p>Change your display name ({currentName}) across all your previous chats.</p>
         {error && <div className="modal-error">{error}</div>}
-        <label>
-          New Name
-          <input
-            type="text"
-            placeholder="Enter new name"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            autoFocus
-          />
-        </label>
+        <label>New Name<input type="text" placeholder="Enter new name" value={newName} onChange={(e) => setNewName(e.target.value)} autoFocus /></label>
         <div className="modal-actions">
-          <button type="button" className="btn-ghost" onClick={onClose} disabled={loading}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn-ai-primary"
-            disabled={loading || !newName.trim() || newName.trim() === currentName}
-            onClick={() => onConfirm(newName.trim())}
-          >
+          <button type="button" className="btn-glass" onClick={onClose} disabled={loading}>Cancel</button>
+          <button type="button" className="btn-primary" disabled={loading || !newName.trim() || newName.trim() === currentName} onClick={() => onConfirm(newName.trim())}>
             {loading ? 'Renaming…' : 'Rename'}
           </button>
         </div>
       </div>
     </div>
-  );
-}
-
-function RecentItem({ item, option, comment }) {
-  const headline =
-    item.activity_type === 'answered'
-      ? 'set option on'
-      : 'added explanation on';
-
-  return (
-    <li className="activity-item recent">
-      <p className="activity-headline">
-        <strong>{item.user_name}</strong> {headline}{' '}
-        <span className="q-num">Q{item.question_number}</span>
-      </p>
-      <div className="activity-line">
-        option — <span className="activity-val">{option || '—'}</span>
-      </div>
-      <div className="activity-line">
-        Comment — <span className="activity-val">"{comment || '—'}"</span>
-      </div>
-      <time>{formatTime(item.created_at)}</time>
-    </li>
   );
 }
 
@@ -179,88 +204,26 @@ function DeleteUserModal({ open, onClose, onConfirm, loading, error, users }) {
   const [targetUser, setTargetUser] = useState('');
 
   useEffect(() => {
-    if (open) {
-      setAdminId('');
-      setAdminPassword('');
-      setTargetUser('');
-    }
+    if (open) { setAdminId(''); setAdminPassword(''); setTargetUser(''); }
   }, [open]);
-
   if (!open) return null;
 
   return (
     <div className="modal-overlay">
-      <div className="modal-card">
+      <div className="modal-card glass-panel">
         <h3>Delete User & All Data</h3>
-        <p style={{ fontSize: '0.85rem', color: '#aaa', marginBottom: '1rem' }}>This will delete the user and all their answers, comments, and messages.</p>
-
-
-        <label>
-          User to Delete (Username)
-          <select
-            value={targetUser}
-            onChange={(e) => setTargetUser(e.target.value)}
-            style={{ display: 'block', width: '100%', marginTop: '0.35rem', padding: '10px 12px', border: '1px solid #2a3848', borderRadius: '8px', background: '#0c1014', color: '#e8eaed', fontSize: '0.95rem' }}
-          >
+        <p>This will delete the user and all their comments, and messages.</p>
+        <label>User to Delete<select value={targetUser} onChange={(e) => setTargetUser(e.target.value)}>
             <option value="">-- Select a user --</option>
-            {users && users.map(u => (
-              <option key={u.user_name} value={u.user_name}>{u.user_name}</option>
-            ))}
-          </select>
-        </label>
-
-
-        <label>
-          Admin ID
-          <input type="text" value={adminId} onChange={(e) => { setAdminId(e.target.value); }} />
-        </label>
-
-        <label>
-          Admin Password
-          <input type="password" value={adminPassword} onChange={(e) => { setAdminPassword(e.target.value); }} />
-        </label>
-
-
-
+            {users && users.map(u => <option key={u.user_name} value={u.user_name}>{u.user_name}</option>)}
+          </select></label>
+        <label>Admin ID<input type="text" value={adminId} onChange={(e) => setAdminId(e.target.value)} /></label>
+        <label>Admin Password<input type="password" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} /></label>
         {error && <div className="modal-error">{error}</div>}
-
         <div className="modal-actions">
-          <button type="button" className="btn-ghost" onClick={onClose} disabled={loading}>Cancel</button>
-          <button type="button" className="btn-danger-outline" disabled={!adminId || !adminPassword || !targetUser || loading} onClick={() => onConfirm(adminId, adminPassword, targetUser)}>
+          <button type="button" className="btn-glass" onClick={onClose} disabled={loading}>Cancel</button>
+          <button type="button" className="btn-danger" disabled={!adminId || !adminPassword || !targetUser || loading} onClick={() => onConfirm(adminId, adminPassword, targetUser)}>
             {loading ? 'Deleting...' : 'Delete User'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AdminAuthModal({ open, onClose, onConfirm, loading, error, title }) {
-  const [adminPassword, setAdminPassword] = useState('');
-
-  useEffect(() => {
-    if (open) setAdminPassword('');
-  }, [open]);
-
-  if (!open) return null;
-
-  return (
-    <div className="modal-overlay">
-      <div className="modal-card">
-        <h3>{title}</h3>
-        <p style={{ fontSize: '0.85rem', color: '#aaa', marginBottom: '1rem' }}>Admin authentication required.</p>
-
-        <label>
-          Admin Password
-          <input type="password" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && adminPassword && !loading && onConfirm(adminPassword)} autoFocus />
-        </label>
-
-        {error && <div className="modal-error">{error}</div>}
-
-        <div className="modal-actions">
-          <button type="button" className="btn-ghost" onClick={onClose} disabled={loading}>Cancel</button>
-          <button type="button" className="btn-ai-primary" disabled={!adminPassword || loading} onClick={() => onConfirm(adminPassword)}>
-            {loading ? 'Verifying...' : 'Submit'}
           </button>
         </div>
       </div>
@@ -271,51 +234,20 @@ function AdminAuthModal({ open, onClose, onConfirm, loading, error, title }) {
 function DeleteModal({ open, onClose, onConfirm, loading, error, title, description, confirmText }) {
   const [adminId, setAdminId] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
-
-  useEffect(() => {
-    if (open) {
-      setAdminId('');
-      setAdminPassword('');
-    }
-  }, [open]);
-
+  useEffect(() => { if (open) { setAdminId(''); setAdminPassword(''); } }, [open]);
   if (!open) return null;
 
   return (
-    <div className="modal-overlay" onClick={onClose} role="presentation">
-      <div className="modal-card" onClick={(e) => e.stopPropagation()} role="dialog">
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-card glass-panel" onClick={(e) => e.stopPropagation()}>
         <h2>{title || 'Delete data'}</h2>
         <p>{description}</p>
         {error && <div className="modal-error">{error}</div>}
-        <label>
-          ID
-          <input
-            type="text"
-            placeholder="Admin ID"
-            value={adminId}
-            onChange={(e) => setAdminId(e.target.value)}
-            autoFocus
-          />
-        </label>
-        <label>
-          Password
-          <input
-            type="password"
-            placeholder="Admin password"
-            value={adminPassword}
-            onChange={(e) => setAdminPassword(e.target.value)}
-          />
-        </label>
+        <label>ID<input type="text" value={adminId} onChange={(e) => setAdminId(e.target.value)} autoFocus/></label>
+        <label>Password<input type="password" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} /></label>
         <div className="modal-actions">
-          <button type="button" className="btn-ghost" onClick={onClose} disabled={loading}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn-delete-confirm"
-            disabled={loading || !adminId || !adminPassword}
-            onClick={() => onConfirm(adminId, adminPassword)}
-          >
+          <button type="button" className="btn-glass" onClick={onClose} disabled={loading}>Cancel</button>
+          <button type="button" className="btn-danger" disabled={loading || !adminId || !adminPassword} onClick={() => onConfirm(adminId, adminPassword)}>
             {loading ? 'Deleting…' : (confirmText || 'Delete')}
           </button>
         </div>
@@ -324,174 +256,468 @@ function DeleteModal({ open, onClose, onConfirm, loading, error, title, descript
   );
 }
 
-function UpdateItem({ item }) {
+function CreateGroupModal({ open, onClose, onCreate, contacts }) {
+  const [groupName, setGroupName] = useState('');
+  const [groupDesc, setGroupDesc] = useState('');
+  const [selectedContacts, setSelectedContacts] = useState(new Set());
+
+  useEffect(() => {
+    if (open) { setGroupName(''); setGroupDesc(''); setSelectedContacts(new Set()); }
+  }, [open]);
+  if (!open) return null;
+
+  const handleToggle = (name) => {
+    setSelectedContacts(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
+  };
+
+  const handleSubmit = () => {
+    if (!groupName.trim() || selectedContacts.size < 1) return;
+    onCreate({ name: groupName.trim(), description: groupDesc.trim(), participants: Array.from(selectedContacts) });
+    onClose();
+  };
+
   return (
-    <li className="activity-item update">
-      <p className="activity-headline">
-        <strong>{item.user_name}</strong> changed option on{' '}
-        <span className="q-num">Q{item.question_number}</span>
-      </p>
-      <div className="update-diff">
-        <span className="old-val">{item.old_value || '—'}</span>
-        <span className="arrow">→</span>
-        <span className="new-val highlight">{item.new_value}</span>
+    <div className="modal-overlay">
+      <div className="modal-card glass-panel">
+        <h3>Create New Group</h3>
+        <p>Start a new group chat with your team. Select at least 1 contact.</p>
+        <label>Group Name *<input type="text" value={groupName} onChange={(e) => setGroupName(e.target.value)} autoFocus/></label>
+        <label>Description<input type="text" value={groupDesc} onChange={(e) => setGroupDesc(e.target.value)} /></label>
+        <div className="privacy-contacts-select" style={{ marginTop: '12px' }}>
+          <strong>Select Participants:</strong>
+          {(!contacts || contacts.length === 0) ? <p>No contacts available</p> : contacts.map(c => (
+              <label key={c.user_name} className="checkbox-label">
+                <input type="checkbox" checked={selectedContacts.has(c.user_name)} onChange={() => handleToggle(c.user_name)}/>{c.user_name}
+              </label>
+            ))}
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="btn-glass" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn-primary" onClick={handleSubmit} disabled={!groupName.trim() || selectedContacts.size < 1}>Create</button>
+        </div>
       </div>
-      <p className="now-answer">
-        now answer is <strong>{item.new_value}</strong>
-      </p>
-      <time>{formatTime(item.created_at)}</time>
-    </li>
+    </div>
   );
 }
 
-export default function Answer({ onNavCode, onNavImages }) {
+function PrivacySettingsModal({ open, onClose, contacts, profileVisibility, visibleToContacts, onSave }) {
+  const [visibility, setVisibility] = useState(profileVisibility);
+  const [selectedContacts, setSelectedContacts] = useState(new Set(visibleToContacts));
+  useEffect(() => {
+    if (open) { setVisibility(profileVisibility); setSelectedContacts(new Set(visibleToContacts)); }
+  }, [open, profileVisibility, visibleToContacts]);
+  if (!open) return null;
+
+  const handleToggleContact = (name) => {
+    setSelectedContacts(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal-card glass-panel">
+        <h3>Profile Privacy Settings</h3>
+        <p>Control who can see your profile photo and online status.</p>
+        <div className="privacy-option-group">
+          <strong>Who can see my profile?</strong>
+          <label className="radio-label"><input type="radio" value="everyone" checked={visibility === 'everyone'} onChange={() => setVisibility('everyone')}/> Everyone</label>
+          <label className="radio-label"><input type="radio" value="selected" checked={visibility === 'selected'} onChange={() => setVisibility('selected')}/> Only Selected</label>
+          <label className="radio-label"><input type="radio" value="nobody" checked={visibility === 'nobody'} onChange={() => setVisibility('nobody')}/> Nobody</label>
+        </div>
+        {visibility === 'selected' && (
+          <div className="privacy-contacts-select">
+            <strong>Allow access for:</strong>
+            {contacts.length === 0 ? <p>No contacts online</p> : contacts.map(c => (
+              <label key={c.user_name} className="checkbox-label"><input type="checkbox" checked={selectedContacts.has(c.user_name)} onChange={() => handleToggleContact(c.user_name)}/> {c.user_name}</label>
+            ))}
+          </div>
+        )}
+        <div className="modal-actions">
+          <button type="button" className="btn-glass" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn-primary" onClick={() => { onSave({ profileVisibility: visibility, visibleToContacts: Array.from(selectedContacts) }); onClose(); }}>Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function Answer({ onNavCode }) {
   const [userName, setUserName] = useState(() => localStorage.getItem(NAME_KEY) || '');
-  const [questions, setQuestions] = useState([]);
-  const [answers, setAnswers] = useState([]);
-  const [comments, setComments] = useState([]);
-  const [recent, setRecent] = useState([]);
-  const [updates, setUpdates] = useState([]);
-  const [optionDrafts, setOptionDrafts] = useState({});
-  const [commentDrafts, setCommentDrafts] = useState({});
-  const [saving, setSaving] = useState(null);
+  const [activeChat, setActiveChat] = useState('ai');
+  const [mobilePane, setMobilePane] = useState('list');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  
+  const [groups, setGroups] = useState([ { id: 'team', name: 'Team Chat', description: 'General collaboration sheet channel', participants: [] } ]);
+  const [activeGroupId, setActiveGroupId] = useState('team');
+
+  const [profileVisibility, setProfileVisibility] = useState('everyone');
+  const [visibleToContacts, setVisibleToContacts] = useState([]);
+  
   const [chatMessages, setChatMessages] = useState([]);
   const [chatDraft, setChatDraft] = useState('');
   const [replyTo, setReplyTo] = useState(null);
 
-  const [leftTab, setLeftTab] = useState('team'); // 'team' or 'personal'
   const [contacts, setContacts] = useState([]);
   const [selectedContact, setSelectedContact] = useState(null);
   const [personalMessages, setPersonalMessages] = useState([]);
   const [personalDraft, setPersonalDraft] = useState('');
-  const [error, setError] = useState('');
+  
+  const [aiResponses, setAiResponses] = useState([]);
+  const [aiDraft, setAiDraft] = useState('');
+  const [aiImages, setAiImages] = useState([]);
+  const [aiLoading, setAiLoading] = useState(false);
+
+  const [showStickers, setShowStickers] = useState(false);
+  const [draftImages, setDraftImages] = useState([]);
+  
+  const [isRecording, setIsRecording] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [audioDraft, setAudioDraft] = useState(null);
+  
+  const [isScrolledUp, setIsScrolledUp] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSearchMenu, setShowSearchMenu] = useState(false);
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchIndex, setSearchIndex] = useState(0);
+
+  const [toast, setToast] = useState(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState('all'); // 'all' or 'personal'
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState('');
-
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameLoading, setRenameLoading] = useState(false);
   const [renameError, setRenameError] = useState('');
-
-  const [linkInput, setLinkInput] = useState('');
-  const [globalExamLink, setGlobalExamLink] = useState('');
-  const [authModalOpen, setAuthModalOpen] = useState(false);
-  const [authLoading, setAuthLoading] = useState(false);
-  const [authError, setAuthError] = useState('');
-
   const [deleteUserOpen, setDeleteUserOpen] = useState(false);
   const [deleteUserLoading, setDeleteUserLoading] = useState(false);
   const [deleteUserError, setDeleteUserError] = useState('');
+  const [clearAiOpen, setClearAiOpen] = useState(false);
+  const [clearAiLoading, setClearAiLoading] = useState(false);
+  const [clearAiError, setClearAiError] = useState('');
+  const [createGroupModalOpen, setCreateGroupModalOpen] = useState(false);
+  const [privacyModalOpen, setPrivacyModalOpen] = useState(false);
+  const [lightboxImg, setLightboxImg] = useState(null);
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [showInstallBanner, setShowInstallBanner] = useState(true);
 
-  const [aiOpen, setAiOpen] = useState(false);
-  const [aiResponses, setAiResponses] = useState([]);
-  const [expandedAiId, setExpandedAiId] = useState(null);
-  const [expandedAiIds, setExpandedAiIds] = useState(() => new Set());
-  const [showAllQuestions] = useState(false);
-  const [recheckLoading, setRecheckLoading] = useState(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const timerRef = useRef(null);
+  const teamChatEndRef = useRef(null);
+  const personalChatEndRef = useRef(null);
+  const aiChatEndRef = useRef(null);
+  const lastMsgCountRef = useRef({ team: 0, personal: 0 });
+  const lastTypingPingRef = useRef(0);
+  const typingTimeoutRef = useRef(null);
 
-  const handleRecheckAi = async (item) => {
-    if (recheckLoading) return;
-    setRecheckLoading(item.id);
-    try {
-      let imagesArray = [];
-      try {
-        if (item.images) {
-          const parsed = typeof item.images === 'string' ? JSON.parse(item.images) : item.images;
-          if (Array.isArray(parsed)) imagesArray = parsed;
-        }
-      } catch (e) { }
+  useEffect(() => {
+    if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
+  }, []);
 
-      const prompt = `Check again and check deeply and give answer. Original question: ${item.question_prompt}`;
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e) => { e.preventDefault(); setDeferredPrompt(e); };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  }, []);
 
-      const rawData = await callOpenAI({
-        questionText: prompt,
-        sheetOption: item.sheet_option || '',
-        sheetExplanation: item.sheet_explanation || '',
-        images: imagesArray,
-      });
-
-      const raw = rawData.text || '';
-      const text = raw.trim();
-      const answerMatch =
-        text.match(/ANSWER:\s*([\s\S]*?)(?=EXPLANATION:|$)/i) ||
-        text.match(/OPTION:\s*([\s\S]*?)(?=EXPLANATION:|$)/i);
-      const explainMatch = text.match(/EXPLANATION:\s*([\s\S]*?)$/i);
-
-      const parsed = {
-        ai_option: answerMatch ? answerMatch[1].trim() : '',
-        ai_explanation: explainMatch ? explainMatch[1].trim() : text,
-        raw_response: text,
-      };
-
-      const existing = aiResponses;
-      const countForQ = existing.filter((r) => r.question_number === item.question_number).length;
-
-      const savedRow = await saveAiResponse({
-        question_number: item.question_number,
-        response_index: countForQ + 1,
-        user_name: userName,
-        question_prompt: prompt,
-        options_text: null,
-        sheet_option: item.sheet_option || '',
-        sheet_explanation: item.sheet_explanation || '',
-        ai_option: parsed.ai_option,
-        ai_explanation: parsed.ai_explanation,
-        raw_response: parsed.raw_response,
-        images: imagesArray,
-      });
-      await loadAll();
-      setExpandedAiIds((prev) => new Set(prev).add(savedRow.id));
-      setExpandedAiId(savedRow.id);
-    } catch (e) {
-      alert(e.message);
-    } finally {
-      setRecheckLoading(null);
+  const handleInstallApp = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') setDeferredPrompt(null);
     }
   };
 
-  const toggleAiExpand = (id) => {
-    setExpandedAiIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+  const showToast = (message, type = 'error') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const handleTyping = (target) => {
+    const now = Date.now();
+    if (now - lastTypingPingRef.current > 3000) {
+      lastTypingPingRef.current = now;
+      pingUser({ user_name: userName, typing_on: target }).catch(() => {});
+    }
+    
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      pingUser({ user_name: userName, typing_on: null }).catch(() => {});
+    }, 3000);
+  };
+
+  useEffect(() => {
+    if (!isScrolledUp && !isSearching) {
+      if (activeChat === 'team') teamChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      else if (activeChat === 'personal') personalChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      else if (activeChat === 'ai') aiChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatMessages, personalMessages, aiResponses, activeChat, isScrolledUp, isSearching]);
+
+  const handleScroll = (e) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.target;
+    setIsScrolledUp(scrollHeight - scrollTop - clientHeight > 100);
+  };
+
+  const scrollToBottom = () => {
+    if (activeChat === 'team') teamChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    else if (activeChat === 'personal') personalChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    else if (activeChat === 'ai') aiChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    setIsScrolledUp(false);
+  };
+
+  const formatRecordingTime = (secs) => {
+    const m = Math.floor(secs / 60).toString().padStart(2, '0');
+    const s = (secs % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setIsPaused(false);
+      setRecordingTime(0);
+      
+      timerRef.current = setInterval(() => setRecordingTime(prev => prev + 1), 1000);
+    } catch (err) {
+      showToast("Microphone access denied.", 'error');
+    }
+  };
+
+  const pauseRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      if (isPaused) {
+        mediaRecorderRef.current.resume();
+        setIsPaused(false);
+        timerRef.current = setInterval(() => setRecordingTime(prev => prev + 1), 1000);
+      } else {
+        mediaRecorderRef.current.pause();
+        setIsPaused(true);
+        clearInterval(timerRef.current);
+      }
+    }
+  };
+
+  const cancelRecording = () => {
+    if (mediaRecorderRef.current) {
+      mediaRecorderRef.current.onstop = null;
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop());
+      setIsRecording(false);
+      setIsPaused(false);
+      clearInterval(timerRef.current);
+      setAudioDraft(null);
+      audioChunksRef.current = [];
+    }
+  };
+
+  const handleInterceptSend = () => {
+    if (isRecording && mediaRecorderRef.current) {
+      mediaRecorderRef.current.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const reader = new FileReader();
+        reader.readAsDataURL(audioBlob);
+        reader.onloadend = () => { executeDispatchSend(reader.result); };
+        mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop());
+      };
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      setIsPaused(false);
+      clearInterval(timerRef.current);
+    } else {
+      executeDispatchSend(audioDraft);
+    }
+  };
+
+  const executeDispatchSend = (finalAudioBase64) => {
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    pingUser({ user_name: userName, typing_on: null }).catch(() => {});
+
+    setAudioDraft(null);
+    if (activeChat === 'ai') handleSendAiChat(finalAudioBase64);
+    else if (activeChat === 'team') handleSendChat(finalAudioBase64);
+    else if (activeChat === 'personal') handleSendPersonalChat(finalAudioBase64);
+  };
+  
+  const handleClearAiChatConfirm = async (adminId, adminPassword) => {
+    setClearAiLoading(true);
+    setClearAiError('');
+    if (
+      (adminId === 'admin' && adminPassword === 'admin') ||
+      (adminId === 'bhargav' && adminPassword === 'bhargav12')
+    ) {
+      try {
+        await clearAiChat(userName);
+        setAiResponses([]);
+        setClearAiOpen(false);
+      } catch (e) {
+        showToast(e.message);
+        setClearAiError(e.message);
+      } finally {
+        setClearAiLoading(false);
+      }
+    } else {
+      setClearAiError('Invalid admin credentials.');
+      setClearAiLoading(false);
+    }
+  };
+
+  const handleClearPersonalChat = async () => {
+    if (!selectedContact) return;
+    if (!window.confirm(`Clear chat with ${selectedContact}?`)) return;
+    try {
+      await clearPersonalChat(userName, selectedContact);
+      setPersonalMessages([]);
+    } catch (e) { showToast(e.message); }
+  };
+
+  const handleSendAiChat = async (audioToSend = null) => {
+    if (!aiDraft.trim() && aiImages.length === 0 && !audioToSend) return;
+    
+    const tempId = Date.now();
+    const promptText = audioToSend ? (aiDraft.trim() || '[Voice Message]') : aiDraft.trim();
+    const finalStoredPrompt = audioToSend || promptText; 
+    
+    const newAiMessage = {
+      id: tempId, question_number: 1, response_index: aiResponses.length + 1,
+      user_name: userName, question_prompt: finalStoredPrompt, raw_response: '...',
+      images: aiImages, created_at: new Date().toISOString()
+    };
+    
+    setAiResponses(prev => [...prev, newAiMessage]);
+    setAiLoading(true);
+    
+    const submittedDraft = promptText;
+    const submittedImages = [...aiImages];
+    setAiDraft('');
+    setAiImages([]);
+    
+    try {
+      const rawData = await callDeepAI({ questionText: submittedDraft, sheetOption: '', sheetExplanation: '', images: submittedImages, user_name: userName });
+      const savedRow = await saveAiResponse({
+        question_number: 1, response_index: aiResponses.length + 1, user_name: userName,
+        question_prompt: finalStoredPrompt, options_text: null, sheet_option: '', sheet_explanation: '',
+        ai_option: null, ai_explanation: null, raw_response: rawData.text || '', images: submittedImages,
+      });
+      // Update local state and flag as new so Typewriter fires
+      setAiResponses(prev => prev.map(m => m.id === tempId ? { ...savedRow, isNew: true } : m));
+    } catch (e) {
+      showToast('AI Search Failed: ' + e.message, 'error');
+      setAiResponses(prev => prev.filter(m => m.id !== tempId));
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const handleUniversalImageUpload = (e) => {
+    const files = Array.from(e.target.files || []);
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        if (activeChat === 'ai') setAiImages(prev => (prev.length >= 4 ? prev : [...prev, ev.target.result]));
+        else setDraftImages(prev => (prev.length >= 4 ? prev : [...prev, ev.target.result]));
+      };
+      reader.readAsDataURL(file);
     });
+  };
+
+  const handleSendSticker = async (stickerId) => {
+    const stickerString = `[STICKER:${stickerId}]`;
+    setShowStickers(false);
+    
+    if (activeChat === 'ai') {
+      setAiLoading(true);
+      try {
+        const tempId = Date.now();
+        const rawData = await callDeepAI({ questionText: `Sent a sticker emoji ${stickerId}`, sheetOption: '', sheetExplanation: '', images: [], user_name: userName });
+        const savedRow = await saveAiResponse({
+          question_number: 1, response_index: aiResponses.length + 1, user_name: userName,
+          question_prompt: stickerString, options_text: null, sheet_option: '', sheet_explanation: '',
+          ai_option: null, ai_explanation: null, raw_response: rawData.text || '', images: [],
+        });
+        setAiResponses(prev => [...prev, { ...savedRow, isNew: true }]);
+      } catch (e) { showToast(e.message); } 
+      finally { setAiLoading(false); }
+    } else if (activeChat === 'team') {
+      const tempId = Date.now();
+      setChatMessages(prev => [...prev, { id: tempId, user_name: userName, content: stickerString, created_at: new Date().toISOString() }]);
+      setTimeout(async () => {
+        try {
+          await postChatMessage({ user_name: userName, content: stickerString, reply_to_id: replyTo ? replyTo.id : null });
+          setReplyTo(null);
+          loadAll();
+        } catch (e) { showToast(e.message); }
+      }, 0);
+    } else if (activeChat === 'personal' && selectedContact) {
+      const tempId = Date.now();
+      setPersonalMessages(prev => [...prev, { id: tempId, sender_name: userName, receiver_name: selectedContact, content: stickerString, created_at: new Date().toISOString() }]);
+      setTimeout(async () => {
+        try {
+          await postPersonalChatMessage({ sender_name: userName, receiver_name: selectedContact, content: stickerString });
+          const msgs = await getPersonalChatMessages(userName, selectedContact);
+          setPersonalMessages(msgs);
+        } catch (e) { showToast(e.message); }
+      }, 0);
+    }
   };
 
   const loadAll = useCallback(async (overrideName) => {
     const activeName = typeof overrideName === 'string' ? overrideName : userName;
     if (!activeName) return;
     try {
-      const [q, a, c, r, u, ai, chatMsgs, contactsSummary, linkData] = await Promise.all([
-        getQuestions(),
-        getAnswers(),
-        getComments(),
-        getRecentActivity(),
-        getUpdateActivity(),
-        getAiResponses().catch(() => []),
+      const [ai, chatMsgs, contactsSummary] = await Promise.all([
+        getAiResponses(activeName).catch(() => []),
         getChatMessages().catch(() => []),
         getPersonalChatSummary(activeName).catch((e) => {
-          if (e.message === 'User deleted') {
-            localStorage.removeItem(NAME_KEY);
-            setUserName('');
-          }
+          if (e.message === 'User deleted') { localStorage.removeItem(NAME_KEY); setUserName(''); }
           return [];
         }),
-        getExamLink().catch(() => ({ exam_link: '' })),
       ]);
-      setQuestions(q);
-      setAnswers(a);
-      setComments(c);
-      setRecent(r);
-      setUpdates(u);
-      setAiResponses(ai);
+      
+      // Preserve isNew flag for AI responses if they already exist in state,
+      // and retain any temporary loading messages (with raw_response: '...')
+      setAiResponses(prev => {
+        const loadingMessages = prev.filter(p => p.raw_response === '...');
+        const updated = ai.map(newMsg => {
+          const existing = prev.find(p => p.id === newMsg.id);
+          if (existing && existing.isNew) return { ...newMsg, isNew: true };
+          return newMsg;
+        });
+        return [...updated, ...loadingMessages];
+      });
+      
+      const prevTeamCount = lastMsgCountRef.current.team;
+      if (prevTeamCount > 0 && chatMsgs.length > prevTeamCount) {
+        const newMsgs = chatMsgs.slice(prevTeamCount);
+        newMsgs.forEach(m => {
+          if (m.user_name !== activeName && "Notification" in window && Notification.permission === "granted") {
+            new Notification(`New message from ${m.user_name}`, { body: m.content.startsWith('data:') ? (m.content.startsWith('data:audio') ? '🎤 Voice Message' : '📸 Image') : m.content });
+          }
+        });
+      }
+      lastMsgCountRef.current.team = chatMsgs.length;
       setChatMessages(chatMsgs);
       setContacts(contactsSummary || []);
-      setGlobalExamLink(linkData?.exam_link || '');
-      setError('');
     } catch (e) {
-      setError(e.message || 'Failed to load. Is backend running on port 3030?');
+      showToast(e.message || 'Failed to load.');
     }
   }, [userName]);
 
@@ -499,40 +725,41 @@ export default function Answer({ onNavCode, onNavImages }) {
     if (!userName) return;
     loadAll();
     const id = setInterval(loadAll, 3000);
-    const pingId = setInterval(() => {
-      pingUser({ user_name: userName }).catch(() => { });
-    }, 10000);
-    return () => {
-      clearInterval(id);
-      clearInterval(pingId);
-    };
+    const pingId = setInterval(() => { pingUser({ user_name: userName }).catch(() => {}); }, 10000);
+    return () => { clearInterval(id); clearInterval(pingId); };
   }, [userName, loadAll]);
 
   const handleName = async (name) => {
     localStorage.setItem(NAME_KEY, name);
     setUserName(name);
-    try {
-      await loginUser({ user_name: name });
-      await loadAll(name);
-    } catch (e) {
-      console.error('Failed to register user:', e);
-    }
+    try { await loginUser({ user_name: name }); await loadAll(name); } catch (e) {}
   };
 
-  const handleSendChat = async () => {
-    if (!chatDraft.trim()) return;
-    try {
-      await postChatMessage({
-        user_name: userName,
-        content: chatDraft.trim(),
-        reply_to_id: replyTo ? replyTo.id : null,
-      });
-      setChatDraft('');
-      setReplyTo(null);
-      await loadAll();
-    } catch (e) {
-      setError(e.message);
-    }
+  const handleSendChat = (audioToSend = null) => {
+    if (!chatDraft.trim() && draftImages.length === 0 && !audioToSend) return;
+    
+    const imgs = [...draftImages];
+    const text = chatDraft.trim();
+    const tempIdBase = Date.now();
+    
+    const newMsgs = [];
+    if (audioToSend) newMsgs.push({ id: tempIdBase - 1, user_name: userName, content: audioToSend, created_at: new Date().toISOString(), reply_to_id: replyTo ? replyTo.id : null });
+    imgs.forEach((img, idx) => newMsgs.push({ id: tempIdBase + idx, user_name: userName, content: img, created_at: new Date().toISOString(), reply_to_id: replyTo ? replyTo.id : null }));
+    if (text) newMsgs.push({ id: tempIdBase + 100, user_name: userName, content: text, created_at: new Date().toISOString(), reply_to_id: replyTo ? replyTo.id : null });
+    
+    setChatMessages(prev => [...prev, ...newMsgs]);
+    setChatDraft('');
+    setDraftImages([]);
+    
+    setTimeout(async () => {
+      try {
+        if (audioToSend) await postChatMessage({ user_name: userName, content: audioToSend, reply_to_id: replyTo ? replyTo.id : null });
+        for (const img of imgs) await postChatMessage({ user_name: userName, content: img, reply_to_id: replyTo ? replyTo.id : null });
+        if (text) await postChatMessage({ user_name: userName, content: text, reply_to_id: replyTo ? replyTo.id : null });
+        setReplyTo(null);
+        loadAll();
+      } catch (e) { showToast(e.message); }
+    }, 0);
   };
 
   useEffect(() => {
@@ -540,689 +767,577 @@ export default function Answer({ onNavCode, onNavImages }) {
     const loadMsgs = async () => {
       try {
         const msgs = await getPersonalChatMessages(userName, selectedContact);
+        const prevPersCount = lastMsgCountRef.current.personal;
+        if (prevPersCount > 0 && msgs.length > prevPersCount) {
+          const newMsgs = msgs.slice(prevPersCount);
+          newMsgs.forEach(m => {
+            if (m.sender_name !== userName && "Notification" in window && Notification.permission === "granted") {
+              new Notification(`Direct message from ${m.sender_name}`, { body: m.content.startsWith('data:') ? (m.content.startsWith('data:audio') ? '🎤 Voice Message' : '📸 Image') : m.content });
+            }
+          });
+        }
+        lastMsgCountRef.current.personal = msgs.length;
         setPersonalMessages(msgs);
         if (msgs.some(m => m.sender_name === selectedContact && m.receiver_name === userName && !m.read_status)) {
           await markPersonalChatRead({ sender_name: selectedContact, receiver_name: userName });
-          loadAll(); // update summary
+          loadAll();
         }
-      } catch (e) {
-        console.error(e);
-      }
+      } catch (e) {}
     };
     loadMsgs();
     const id = setInterval(loadMsgs, 3000);
     return () => clearInterval(id);
   }, [userName, selectedContact, loadAll]);
 
-  const handleSendPersonalChat = async () => {
-    if (!personalDraft.trim() || !selectedContact) return;
-    try {
-      await postPersonalChatMessage({
-        sender_name: userName,
-        receiver_name: selectedContact,
-        content: personalDraft.trim(),
-      });
-      setPersonalDraft('');
-      const msgs = await getPersonalChatMessages(userName, selectedContact);
-      setPersonalMessages(msgs);
-    } catch (e) {
-      setError(e.message);
-    }
+  const handleSendPersonalChat = (audioToSend = null) => {
+    if ((!personalDraft.trim() && draftImages.length === 0 && !audioToSend) || !selectedContact) return;
+    
+    const imgs = [...draftImages];
+    const text = personalDraft.trim();
+    const tempIdBase = Date.now();
+    
+    const newMsgs = [];
+    if (audioToSend) newMsgs.push({ id: tempIdBase - 1, sender_name: userName, receiver_name: selectedContact, content: audioToSend, created_at: new Date().toISOString() });
+    imgs.forEach((img, idx) => newMsgs.push({ id: tempIdBase + idx, sender_name: userName, receiver_name: selectedContact, content: img, created_at: new Date().toISOString() }));
+    if (text) newMsgs.push({ id: tempIdBase + 100, sender_name: userName, receiver_name: selectedContact, content: text, created_at: new Date().toISOString() });
+    
+    setPersonalMessages(prev => [...prev, ...newMsgs]);
+    setPersonalDraft('');
+    setDraftImages([]);
+    
+    setTimeout(async () => {
+      try {
+        if (audioToSend) await postPersonalChatMessage({ sender_name: userName, receiver_name: selectedContact, content: audioToSend });
+        for (const img of imgs) await postPersonalChatMessage({ sender_name: userName, receiver_name: selectedContact, content: img });
+        if (text) await postPersonalChatMessage({ sender_name: userName, receiver_name: selectedContact, content: text });
+        const msgs = await getPersonalChatMessages(userName, selectedContact);
+        setPersonalMessages(msgs);
+      } catch (e) { showToast(e.message); }
+    }, 0);
   };
-
-  const answerByQ = answers.reduce((acc, row) => {
-    if (!acc[row.question_number] || new Date(row.created_at) > new Date(acc[row.question_number].created_at)) {
-      acc[row.question_number] = row;
-    }
-    return acc;
-  }, {});
-
-  const latestCommentByQ = comments.reduce((acc, c) => {
-    if (!acc[c.question_number] || new Date(c.created_at) > new Date(acc[c.question_number].created_at)) {
-      acc[c.question_number] = c;
-    }
-    return acc;
-  }, {});
 
   const handleDeleteAll = async (adminId, adminPassword) => {
     setDeleteLoading(true);
     setDeleteError('');
     try {
       await deleteAllData({ admin_id: adminId, admin_password: adminPassword });
-      setOptionDrafts({});
-      setCommentDrafts({});
       setDeleteOpen(false);
       await loadAll();
-      setDeleteOpen(false);
-    } catch (e) {
-      setDeleteError(e.message);
-    } finally {
-      setDeleteLoading(false);
-    }
-  };
-
-  const handleDeletePersonal = async (id, password) => {
-    setDeleteLoading(true);
-    setDeleteError('');
-    try {
-      await deleteAllPersonalData({ admin_id: id, admin_password: password });
-      await loadAll();
-      setDeleteOpen(false);
-    } catch (e) {
-      setDeleteError(e.message);
-    } finally {
-      setDeleteLoading(false);
-    }
+    } catch (e) { showToast(e.message); setDeleteError(e.message); }
+    finally { setDeleteLoading(false); }
   };
 
   const handleRename = async (newName) => {
     setRenameLoading(true);
-    setRenameError('');
     try {
       await renameUser({ old_name: userName, new_name: newName });
       localStorage.setItem(NAME_KEY, newName);
       setUserName(newName);
       setRenameOpen(false);
       await loadAll(newName);
-    } catch (e) {
-      setRenameError(e.message);
-    } finally {
-      setRenameLoading(false);
-    }
+    } catch (e) { showToast(e.message); }
+    finally { setRenameLoading(false); }
   };
 
   const handleDeleteUser = async (adminId, adminPassword, targetUser) => {
     setDeleteUserLoading(true);
-    setDeleteUserError('');
     try {
       await deleteUser({ admin_id: adminId, admin_password: adminPassword, target_user: targetUser });
       setDeleteUserOpen(false);
       await loadAll();
-      if (targetUser === userName) {
-        localStorage.removeItem(NAME_KEY);
-        setUserName('');
-      }
-    } catch (e) {
-      setDeleteUserError(e.message);
-    } finally {
-      setDeleteUserLoading(false);
+      if (targetUser === userName) { localStorage.removeItem(NAME_KEY); setUserName(''); }
+    } catch (e) { showToast(e.message); }
+    finally { setDeleteUserLoading(false); }
+  };
+
+  const handleCreateGroup = (groupData) => {
+    const newGroup = { id: `group_${Date.now()}`, name: groupData.name, description: groupData.description || 'Custom group channel', participants: groupData.participants };
+    setGroups(prev => [...prev, newGroup]);
+    setActiveChat('team');
+    setActiveGroupId(newGroup.id);
+    setMobilePane('chat');
+  };
+
+  const handleSavePrivacy = (privacyData) => {
+    setProfileVisibility(privacyData.profileVisibility);
+    setVisibleToContacts(privacyData.visibleToContacts);
+  };
+
+  const scrollToMatch = (id) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('highlight-flash');
+      setTimeout(() => el.classList.remove('highlight-flash'), 2000);
     }
   };
 
-  const handleAuthSubmit = async (password) => {
-    setAuthLoading(true);
-    setAuthError('');
-    try {
-      await saveExamLink({ admin_password: password, exam_link: linkInput.trim() });
-      setAuthModalOpen(false);
-      setLinkInput('');
-      await loadAll(userName);
-    } catch (e) {
-      setAuthError(e.message || 'Failed to submit link');
-    } finally {
-      setAuthLoading(false);
+  const handleSearchSubmit = () => {
+    if (!searchQuery.trim()) return;
+    const query = searchQuery.toLowerCase();
+    let foundIds = [];
+    
+    if (activeChat === 'ai') foundIds = [...aiResponses].filter(m => (m.question_prompt || '').toLowerCase().includes(query) || (m.raw_response || '').toLowerCase().includes(query)).map(m => `msg-ai-${m.id}`);
+    else if (activeChat === 'team') foundIds = [...chatMessages].filter(m => m.content.toLowerCase().includes(query)).map(m => `msg-team-${m.id}`);
+    else if (activeChat === 'personal') foundIds = [...personalMessages].filter(m => m.content.toLowerCase().includes(query)).map(m => `msg-personal-${m.id}`);
+
+    if (foundIds.length > 0) {
+      setSearchResults(foundIds);
+      setSearchIndex(foundIds.length - 1);
+      scrollToMatch(foundIds[foundIds.length - 1]);
+    } else {
+      showToast("Message not found.");
+      setSearchResults([]);
     }
   };
 
-  const handleSave = async (questionNumber) => {
-    const option = (optionDrafts[questionNumber] ?? '').trim();
-    const explanation = (commentDrafts[questionNumber] ?? '').trim();
-    if (!option && !explanation) return;
-
-    setSaving(questionNumber);
-    try {
-      if (option) {
-        await saveAnswer({
-          question_number: questionNumber,
-          user_name: userName,
-          answer_text: option,
-        });
-        setOptionDrafts((prev) => {
-          const next = { ...prev };
-          delete next[questionNumber];
-          return next;
-        });
-      }
-      if (explanation) {
-        await postComment({
-          question_number: questionNumber,
-          user_name: userName,
-          comment_text: explanation,
-        });
-        setCommentDrafts((prev) => {
-          const next = { ...prev };
-          delete next[questionNumber];
-          return next;
-        });
-      }
-      await loadAll();
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setSaving(null);
-    }
+  const handleSearchNext = () => {
+    if (searchResults.length === 0) return;
+    let nextIdx = searchIndex + 1;
+    if (nextIdx >= searchResults.length) nextIdx = 0;
+    setSearchIndex(nextIdx);
+    scrollToMatch(searchResults[nextIdx]);
+  };
+  
+  const handleSearchPrev = () => {
+    if (searchResults.length === 0) return;
+    let prevIdx = searchIndex - 1;
+    if (prevIdx < 0) prevIdx = searchResults.length - 1;
+    setSearchIndex(prevIdx);
+    scrollToMatch(searchResults[prevIdx]);
   };
 
-  if (!userName) {
-    return <NameGate onSubmit={handleName} />;
-  }
+  const renderMessageContent = (contentStr, isAudio = false) => {
+    if (isAudio || contentStr.startsWith('data:audio/')) {
+      return <CustomAudioPlayer src={contentStr} />;
+    }
+    if (contentStr.startsWith('data:image/')) {
+      return <img className="msg-image" src={contentStr} alt="Attachment" onClick={() => setLightboxImg(contentStr)} />;
+    }
+    const isSticker = contentStr.startsWith('[STICKER:');
+    const stickerId = isSticker ? contentStr.match(/^\[STICKER:(.+)\]$/)?.[1] : null;
+    const stickerObj = PRESET_STICKERS.find(s => s.id === stickerId);
+    if (isSticker && stickerObj) return <div className="sticker-img">{stickerObj.display}</div>;
+    return <p>{contentStr}</p>;
+  };
+
+  if (!userName) return <NameGate onSubmit={handleName} />;
+  const isProfileVisibleTo = (contactName) => {
+    if (profileVisibility === 'everyone') return true;
+    if (profileVisibility === 'nobody') return false;
+    if (profileVisibility === 'selected') return visibleToContacts.includes(contactName);
+    return true;
+  };
+
+  const sortedAiResponses = [...aiResponses].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  const sortedTeamMessages = [...chatMessages].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  const sortedPersonalMessages = [...personalMessages].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  const currentActiveGroup = groups.find(g => g.id === activeGroupId) || groups[0];
+
   return (
     <div className="answer-app">
-      <header className="answer-top answer-top-fixed">
-        <h1>Answer Sheet</h1>
-        <span className="answer-user" style={{ marginRight: '1rem' }}>
-          Hi, <strong>{userName}</strong>
-        </span>
+      {toast && (
+        <div className="toast-container">
+          <div className={`toast-notification ${toast.type}`}>
+            <i className={toast.type === 'success' ? 'fa fa-check-circle' : 'fa fa-exclamation-circle'}></i>
+            {toast.message}
+          </div>
+        </div>
+      )}
 
-        <button type="button" className="btn-ghost" onClick={onNavCode}>
-          Code
+      {lightboxImg && (
+        <div className="ai-lightbox" onClick={() => setLightboxImg(null)}>
+          <img src={lightboxImg} alt="Enlarged" onClick={(e) => e.stopPropagation()} />
+          <button className="ai-lightbox-close" onClick={() => setLightboxImg(null)}>&times;</button>
+        </div>
+      )}
+
+      {/* Global Header */}
+      <header className="app-global-header glass-panel">
+        <div className="header-brand">
+          <span className="brand-logo">💬</span>
+          <h1>Chat Workspace</h1>
+        </div>
+        
+        <button className="mobile-hamburger" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+          <i className={mobileMenuOpen ? "fa fa-times" : "fa fa-bars"}></i>
         </button>
-        <button type="button" className="btn-ghost" onClick={onNavImages}>
-          Images
-        </button>
-        <button
-          type="button"
-          className="btn-ai-primary"
-          onClick={() => setRenameOpen(true)}
-        >
-          Change name
-        </button>
-        <div className="answer-header-actions">
-          <button
-            type="button"
-            className="btn-danger-outline"
-            onClick={() => setDeleteUserOpen(true)}
-          >
-            Delete user
-          </button>
-          <button
-            type="button"
-            className="btn-danger-outline"
-            onClick={() => { setDeleteTarget('all'); setDeleteOpen(true); }}
-          >
-            Delete data
-          </button>
-          <AiChatButton onClick={() => setAiOpen(true)} />
+
+        <div className={`header-controls ${mobileMenuOpen ? 'mobile-open' : ''}`}>
+          <span className="current-user-badge" style={{marginBottom: mobileMenuOpen ? '8px' : '0'}}>👤 {userName}</span>
+          <button type="button" className="btn-glass" onClick={() => { setMobileMenuOpen(false); onNavCode(); }}>Code Data</button>
+          <button type="button" className="btn-glass" onClick={() => { setMobileMenuOpen(false); setRenameOpen(true); }}>Rename</button>
+          <button type="button" className="btn-glass btn-danger" onClick={() => { setMobileMenuOpen(false); setClearAiOpen(true); }}>Clear AI Chat</button>
+          <button type="button" className="btn-glass btn-danger" onClick={() => { setMobileMenuOpen(false); setDeleteUserOpen(true); }}>Delete User & All Data</button>
+          <button type="button" className="btn-glass btn-danger" onClick={() => { setMobileMenuOpen(false); setDeleteOpen(true); }}>Clear Data</button>
         </div>
       </header>
 
-      <RenameModal
-        open={renameOpen}
-        onClose={() => !renameLoading && setRenameOpen(false)}
-        onConfirm={handleRename}
-        loading={renameLoading}
-        error={renameError}
-        currentName={userName}
-      />
-
-      <DeleteUserModal
-        open={deleteUserOpen}
-        onClose={() => {
-          setDeleteUserOpen(false);
-          setDeleteUserError('');
-        }}
-        onConfirm={handleDeleteUser}
-        loading={deleteUserLoading}
-        error={deleteUserError}
-        users={contacts}
-      />
-
-      <AdminAuthModal
-        open={authModalOpen}
-        onClose={() => {
-          setAuthModalOpen(false);
-          setAuthError('');
-        }}
-        onConfirm={handleAuthSubmit}
-        loading={authLoading}
-        error={authError}
-        title="Submit Global Exam Link"
-      />
-
-      <DeleteModal
-        open={deleteOpen}
-        onClose={() => !deleteLoading && setDeleteOpen(false)}
-        onConfirm={deleteTarget === 'all' ? handleDeleteAll : handleDeletePersonal}
-        loading={deleteLoading}
-        error={deleteError}
-        title={deleteTarget === 'all' ? 'Delete all data' : 'Delete personal chats'}
-        description={deleteTarget === 'all' ? 'This removes every option, explanation, activity log, and team chat message. Cannot be undone.' : 'This will permanently delete all personal chat messages between all users. Cannot be undone.'}
-        confirmText={deleteTarget === 'all' ? 'Delete everything' : 'Delete personal chats'}
-      />
-
-      <AiChatModal
-        open={aiOpen}
-        onClose={() => setAiOpen(false)}
-        userName={userName}
-        questions={questions}
-        answerByQ={answerByQ}
-        latestCommentByQ={latestCommentByQ}
-        onComplete={(row) => {
-          if (row?.id) {
-            setExpandedAiId(row.id);
-            setExpandedAiIds((prev) => new Set(prev).add(row.id));
-          }
-          loadAll();
-        }}
-      />
-
-      <div className="answer-body">
-        {error && <div className="answer-error">{error}</div>}
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '16px', background: '#151c24', borderBottom: '1px solid #243040', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ color: '#aaa', fontWeight: 'bold', fontSize: '0.9rem' }}>Exam link</span>
-            <input
-              type="text"
-              placeholder="Enter link..."
-              value={linkInput}
-              onChange={(e) => setLinkInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && linkInput.trim() && setAuthModalOpen(true)}
-              className="text-area-value"
-              style={{ width: '250px', height: '26px', paddingLeft: '10px', marginLeft: '10px', marginRight: '10px', marginBottom: 0 }}
-            />
-            <button
-              type="button"
-              className="btn-ai-primary"
-              onClick={() => setAuthModalOpen(true)}
-              disabled={!linkInput.trim()}
-            >
-              Submit
-            </button>
-          </div>
-
-          {globalExamLink && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', borderLeft: '1px solid #2a3848', paddingLeft: '16px' }}>
-              <span style={{ color: '#00e5ff', textDecoration: 'underline', fontSize: '0.95rem', maxWidth: '300px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {globalExamLink}
-              </span>
-              <button
-                type="button"
-                className="btn-ghost"
-                style={{ padding: '6px 12px', fontSize: '0.85rem' }}
-                onClick={() => navigator.clipboard.writeText(globalExamLink)}
-              >
-                Copy Link
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className="answer-layout">
-          <aside className="answer-side chat-side left" style={{ display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', gap: '10px', marginBottom: '1rem' }}>
-              <button
-                type="button"
-                onClick={() => setLeftTab('team')}
-                style={{ flex: 1, padding: '8px', background: leftTab === 'team' ? '#1c252e' : 'transparent', border: '1px solid #2a3848', color: leftTab === 'team' ? '#00e5ff' : '#888', cursor: 'pointer', borderRadius: '4px' }}
-              >Team Chat</button>
-              <div className="tab-btn-container">
-                <button
-                  type="button"
-                  onClick={() => { setLeftTab('personal'); setSelectedContact(null); }}
-                  style={{ flex: 1, width: '100%', padding: '8px', background: leftTab === 'personal' ? '#1c252e' : 'transparent', border: '1px solid #2a3848', color: leftTab === 'personal' ? '#00e5ff' : '#888', cursor: 'pointer', borderRadius: '4px' }}
-                >Personal Chat</button>
-                {contacts.reduce((acc, c) => acc + c.unread_count, 0) > 0 && (
-                  <span className="unread-badge-pop">
-                    {contacts.reduce((acc, c) => acc + c.unread_count, 0)}
-                  </span>
-                )}
+      <div className="chat-app-container">
+        <div className={`chat-layout show-${mobilePane}`}>
+          
+          <aside className="chat-sidebar glass-panel">
+            <div className="sidebar-profile-card">
+              <div className="profile-avatar-large" onClick={() => setPrivacyModalOpen(true)} title="Privacy Settings">
+                {userName.charAt(0).toUpperCase()}
+                <span className="privacy-badge">&#128274;</span>
+              </div>
+              <div className="profile-info">
+                <h3>{userName}</h3>
+                <span>{profileVisibility === 'everyone' ? 'Public' : profileVisibility === 'nobody' ? 'Private' : 'Limited'} Profile</span>
+              </div>
+              <div className="sidebar-top-actions">
+                <button type="button" className="btn-icon" title="Create Group" onClick={() => setCreateGroupModalOpen(true)}>&#10133;</button>
               </div>
             </div>
 
-            {leftTab === 'team' ? (
-              <>
-                <div className="chat-input-box" style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '1rem' }}>
-                  {replyTo && (
-                    <div style={{ fontSize: '0.75rem', color: '#00e5ff', display: 'flex', justifyContent: 'space-between' }}>
-                      <span>Replying to {replyTo.user_name}</span>
-                      <button type="button" style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }} onClick={() => setReplyTo(null)}>✕</button>
+            <div className="sidebar-scrollable custom-scrollbar">
+              <h2 className="section-title">Conversations</h2>
+              <ul className="thread-list">
+                <li className={`thread-item ${activeChat === 'ai' ? 'active' : ''}`} onClick={() => { setActiveChat('ai'); setMobilePane('chat'); setIsSearching(false); setSearchResults([]); }}>
+                  <div className="thread-avatar ai">AI</div>
+                  <div className="thread-text">
+                    <div className="thread-head"><strong>AI Assistant</strong><span className="badge">Meta AI</span></div>
+                    <p>Ask questions with images</p>
+                  </div>
+                </li>
+                {groups.map(group => {
+                  const isSelected = activeChat === 'team' && activeGroupId === group.id;
+                  return (
+                    <li key={group.id} className={`thread-item ${isSelected ? 'active' : ''}`} onClick={() => { setActiveChat('team'); setActiveGroupId(group.id); setMobilePane('chat'); setIsSearching(false); setSearchResults([]); }}>
+                      <div className="thread-avatar team">G</div>
+                      <div className="thread-text">
+                        <div className="thread-head"><strong>{group.name}</strong></div>
+                        <p>{group.description}</p>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+
+              <h2 className="section-title" style={{ marginTop: '1rem' }}>Direct Messages</h2>
+              <ul className="thread-list contacts-list">
+                {contacts.length === 0 && <li className="empty-state">No contacts online</li>}
+                {contacts.map(c => {
+                  const isOnline = (new Date() - new Date(c.last_seen) < 30000);
+                  const isSelected = activeChat === 'personal' && selectedContact === c.user_name;
+                  const allowedToSee = isProfileVisibleTo(c.user_name);
+                  const isTypingToUs = isOnline && c.typing_on === userName && (new Date() - new Date(c.typing_at) < 5000);
+                  
+                  return (
+                    <li key={c.user_name} className={`thread-item ${isSelected ? 'active' : ''}`} onClick={() => { setActiveChat('personal'); setSelectedContact(c.user_name); setMobilePane('chat'); setIsSearching(false); setSearchResults([]); }}>
+                      <div className="thread-avatar user">
+                        {allowedToSee ? c.user_name.charAt(0).toUpperCase() : '?'}
+                        {allowedToSee && <span className={`status-indicator ${isOnline ? 'online' : 'offline'}`}></span>}
+                      </div>
+                      <div className="thread-text">
+                        <div className="thread-head">
+                          <strong>{c.user_name}</strong>
+                          {c.unread_count > 0 && <span className="unread-count">{c.unread_count}</span>}
+                        </div>
+                        <p style={{ color: isTypingToUs ? '#10b981' : 'var(--text-muted)' }}>
+                          {isTypingToUs ? (
+                            <em>typing...</em>
+                          ) : c.last_message ? (
+                            c.last_message.startsWith('data:image/') ? '[Image]' : c.last_message.startsWith('data:audio/') ? '[Voice Message]' : c.last_message.startsWith('[STICKER:') ? '[Sticker]' : c.last_message
+                          ) : (
+                            isOnline ? 'Online' : 'Offline'
+                          )}
+                        </p>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          </aside>
+
+          <main className="chat-main glass-panel">
+            <div className="chat-header">
+              <button className="mobile-back-btn" onClick={() => setMobilePane('list')}>&larr; Back</button>
+              
+              {activeChat === 'ai' && (
+                <div className="chat-header-details">
+                  <div className="thread-avatar ai">AI</div>
+                  <div><h3>AI Assistant (Meta AI)</h3><span>{aiLoading ? 'Meta AI is typing...' : 'DeepAI (standard) active'}</span></div>
+                </div>
+              )}
+              {activeChat === 'team' && (() => {
+                const teamTypingUsers = contacts.filter(c => c.typing_on === 'team' && (new Date() - new Date(c.typing_at) < 5000) && (new Date() - new Date(c.last_seen) < 30000));
+                const teamTypingText = teamTypingUsers.length > 0 
+                  ? `${teamTypingUsers.map(u => u.user_name).join(', ')} ${teamTypingUsers.length === 1 ? 'is' : 'are'} typing...`
+                  : currentActiveGroup.description;
+                return (
+                  <div className="chat-header-details">
+                    <div className="thread-avatar team">G</div>
+                    <div><h3>{currentActiveGroup.name}</h3><span style={{ color: teamTypingUsers.length > 0 ? '#10b981' : 'inherit' }}>{teamTypingText}</span></div>
+                  </div>
+                );
+              })()}
+              {activeChat === 'personal' && (
+                <div className="chat-header-details">
+                  {selectedContact ? (() => {
+                    const contactData = contacts.find(c => c.user_name === selectedContact);
+                    const isOnline = contactData && (new Date() - new Date(contactData.last_seen) < 30000);
+                    const isTyping = isOnline && contactData.typing_on === userName && (new Date() - new Date(contactData.typing_at) < 5000);
+                    const statusText = isTyping ? 'typing...' : (isOnline ? 'Online' : 'Offline');
+                    return (
+                      <>
+                        <div className="thread-avatar user">
+                          {isProfileVisibleTo(selectedContact) ? selectedContact.charAt(0).toUpperCase() : '?'}
+                        </div>
+                        <div>
+                          <h3>{selectedContact}</h3>
+                          <span style={{ color: isTyping ? '#10b981' : 'inherit' }}>{statusText}</span>
+                        </div>
+                      </>
+                    );
+                  })() : (
+                    <div><h3>Direct Chat</h3><span>Select a contact</span></div>
+                  )}
+                </div>
+              )}
+              
+              <div style={{ flex: 1 }}></div>
+
+              {!isSearching ? (
+                <div className="chat-header-options">
+                  {activeChat === 'ai' && (
+                    <>
+                      {userName.toLowerCase() === 'bhargav' && (
+                        <button className="btn-icon" style={{color: '#ef4444'}} onClick={() => setDeleteOpen(true)} title="Erase All Data (Admin)"><i className="fa fa-bomb"></i></button>
+                      )}
+                    </>
+                  )}
+                  {activeChat === 'personal' && selectedContact && (
+                    <button className="btn-icon" onClick={handleClearPersonalChat} title="Clear Personal Chat"><i className="fa fa-trash"></i></button>
+                  )}
+                  <button className="btn-icon" onClick={() => setShowSearchMenu(!showSearchMenu)}>&#8942;</button>
+                  {showSearchMenu && (
+                    <div className="search-popover glass-panel">
+                      <button className="dropdown-item" onClick={() => { setIsSearching(true); setShowSearchMenu(false); }}>Search Messages</button>
                     </div>
                   )}
+                </div>
+              ) : (
+                <div className="chat-header-search" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input type="text" placeholder="Search in chat..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearchSubmit()} autoFocus className="search-input glass-input" />
+                  {searchResults.length > 0 && <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{searchIndex + 1}/{searchResults.length}</span>}
+                  <button className="btn-icon" onClick={handleSearchPrev} title="Previous Match" disabled={searchResults.length === 0}>&lt;</button>
+                  <button className="btn-icon" onClick={handleSearchNext} title="Next Match" disabled={searchResults.length === 0}>&gt;</button>
+                  <button className="btn-glass btn-small" onClick={() => { setIsSearching(false); setSearchQuery(''); setSearchResults([]); }}>Cancel</button>
+                </div>
+              )}
+            </div>
+
+            <div className="chat-history custom-scrollbar" onScroll={handleScroll}>
+              {activeChat === 'ai' && (
+                <div className="message-feed">
+                  {sortedAiResponses.length === 0 && <div className="chat-placeholder"><h2>Chat with Meta AI</h2><p>Ask anything, attach images with `+`, or send stickers!</p></div>}
+                  {sortedAiResponses.map(item => {
+                    let imgs = [];
+                    try { if (item.images) imgs = typeof item.images === 'string' ? JSON.parse(item.images) : item.images; } catch (e) {}
+                    const isAudio = item.question_prompt?.startsWith('data:audio/');
+                    return (
+                      <div key={item.id} className="chat-block" id={`msg-ai-${item.id}`}>
+                        <div className="msg right">
+                          {renderMessageContent(item.question_prompt || '', isAudio) !== item.question_prompt && !isAudio ? (
+                            renderMessageContent(item.question_prompt)
+                          ) : (
+                            <div className="bubble my-bubble">
+                              {isAudio ? renderMessageContent(item.question_prompt, true) : <p>{item.question_prompt}</p>}
+                              {imgs.length > 0 && <div className="bubble-gallery">{imgs.map((img, i) => <img key={i} src={img} alt="upload" onClick={() => setLightboxImg(img)} />)}</div>}
+                            </div>
+                          )}
+                        </div>
+                        <div className="msg left">
+                          <div className="bubble ai-bubble natural-chat">
+                            <span className="sender-name">Meta AI</span>
+                            {item.raw_response === '...' ? (
+                              <TypingIndicator />
+                            ) : item.isNew ? (
+                              <Typewriter text={cleanAiText(item.raw_response || item.ai_explanation || '—')} />
+                            ) : (
+                              <p className="natural-ai-text">{cleanAiText(item.raw_response || item.ai_explanation || '—')}</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div ref={aiChatEndRef} />
+                </div>
+              )}
+
+              {activeChat === 'team' && (
+                <div className="message-feed">
+                  {sortedTeamMessages.length === 0 && <p className="chat-placeholder">No messages in group yet</p>}
+                  {sortedTeamMessages.map(msg => {
+                    const repliedMsg = msg.reply_to_id ? chatMessages.find(m => m.id === msg.reply_to_id) : null;
+                    const isMe = msg.user_name === userName;
+                    const rendered = renderMessageContent(msg.content);
+                    const isBubbleFree = rendered.type === 'div' && rendered.props.className === 'sticker-img';
+
+                    return (
+                      <div key={msg.id} id={`msg-team-${msg.id}`} className={`msg ${isMe ? 'right' : 'left'}`}>
+                        {isBubbleFree ? rendered : (
+                          <div className={`bubble ${isMe ? 'my-bubble' : 'other-bubble'}`}>
+                            <div className="msg-info"><strong>{msg.user_name}</strong><span>{formatTime(msg.created_at)}</span></div>
+                            {repliedMsg && <div className="reply-quote"><strong>{repliedMsg.user_name}</strong>: {repliedMsg.content.startsWith('data:image/') ? '[Image]' : repliedMsg.content.startsWith('data:audio/') ? '[Voice Message]' : repliedMsg.content}</div>}
+                            {rendered}
+                            <div className="bubble-actions"><button onClick={() => setReplyTo(msg)}>Reply</button></div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  <div ref={teamChatEndRef} />
+                </div>
+              )}
+
+              {activeChat === 'personal' && (
+                <div className="message-feed">
+                  {!selectedContact ? <p className="chat-placeholder">Select a contact to begin messaging.</p> : sortedPersonalMessages.length === 0 ? <p className="chat-placeholder">No messages with {selectedContact} yet</p> : (
+                    sortedPersonalMessages.map(msg => {
+                      const isMe = msg.sender_name === userName;
+                      const rendered = renderMessageContent(msg.content);
+                      const isBubbleFree = rendered.type === 'div' && rendered.props.className === 'sticker-img';
+
+                      return (
+                        <div key={msg.id} id={`msg-personal-${msg.id}`} className={`msg ${isMe ? 'right' : 'left'}`}>
+                          {isBubbleFree ? rendered : (
+                            <div className={`bubble ${isMe ? 'my-bubble' : 'other-bubble'}`}>
+                              <div className="msg-info"><strong>{msg.sender_name}</strong><span>{formatTime(msg.created_at)}</span></div>
+                              {rendered}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                  <div ref={personalChatEndRef} />
+                </div>
+              )}
+            </div>
+            
+            {isScrolledUp && <button className="btn-scroll-bottom" onClick={scrollToBottom}>⬇</button>}
+
+            <div className="chat-input-area glass-panel-inner">
+              
+              {((activeChat === 'ai' && aiImages.length > 0) || (activeChat !== 'ai' && draftImages.length > 0)) && (
+                <div className="draft-images-tray">
+                  {(activeChat === 'ai' ? aiImages : draftImages).map((img, idx) => (
+                    <div key={idx} className="draft-thumb-wrap">
+                      <img src={img} alt="preview" className="draft-thumb" />
+                      <button className="remove-thumb-btn" onClick={() => activeChat === 'ai' ? setAiImages(prev => prev.filter((_, i) => i !== idx)) : setDraftImages(prev => prev.filter((_, i) => i !== idx))}>&times;</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {showStickers && (
+                <div className="sticker-popover glass-panel">
+                  <div className="sticker-popover-head">
+                    <strong>Send Sticker</strong>
+                    <button className="btn-icon" onClick={() => setShowStickers(false)}>&times;</button>
+                  </div>
+                  <div className="sticker-grid">
+                    {PRESET_STICKERS.map(st => <button key={st.id} className="sticker-btn" onClick={() => handleSendSticker(st.id)}>{st.display}</button>)}
+                  </div>
+                </div>
+              )}
+
+              <div className="input-toolbar">
+                <label className="btn-icon-large" title="Attach file">
+                  &#10133;
+                  <input type="file" multiple accept="image/*" style={{ display: 'none' }} onChange={handleUniversalImageUpload} />
+                </label>
+                
+                <button className="btn-icon-large" title="Stickers" onClick={() => setShowStickers(!showStickers)}>&#128512;</button>
+                
+                {isRecording ? (
+                  <div className="recording-bar">
+                    <div className={`record-dot ${isPaused ? 'paused' : ''}`}></div>
+                    <span className="record-time">{formatRecordingTime(recordingTime)}</span>
+                    <button className="btn-glass btn-small" onClick={pauseRecording}>{isPaused ? '▶ Resume' : '⏸ Pause'}</button>
+                    <button className="btn-danger btn-small" onClick={cancelRecording}>🗑 Delete</button>
+                  </div>
+                ) : (
                   <textarea
-                    rows={2}
+                    className="chat-textarea custom-scrollbar"
                     placeholder="Type a message..."
-                    className='text-area-value'
-                    value={chatDraft}
-                    onChange={(e) => setChatDraft(e.target.value)}
+                    value={activeChat === 'ai' ? aiDraft : activeChat === 'team' ? chatDraft : personalDraft}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (activeChat === 'ai') {
+                        setAiDraft(val);
+                        handleTyping('ai');
+                      } else if (activeChat === 'team') {
+                        setChatDraft(val);
+                        handleTyping('team');
+                      } else if (activeChat === 'personal') {
+                        setPersonalDraft(val);
+                        if (selectedContact) handleTyping(selectedContact);
+                      }
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
-                        handleSendChat();
+                        handleInterceptSend();
                       }
                     }}
+                    disabled={activeChat === 'personal' && !selectedContact}
                   />
-                  <button type="button" className="btn-ai-primary" onClick={handleSendChat} style={{ padding: '6px' }}>Send</button>
-                </div>
-
-                <ul className="chat-list" style={{ flex: 1, overflowY: 'auto', marginBottom: '1rem', listStyle: 'none', padding: 0 }}>
-                  {chatMessages.length === 0 && <li className="empty">No messages yet</li>}
-                  {chatMessages.map((msg) => {
-                    const repliedMsg = msg.reply_to_id ? chatMessages.find(m => m.id === msg.reply_to_id) : null;
-                    return (
-                      <li key={msg.id} className="chat-msg" style={{ marginBottom: '0.75rem', padding: '0.5rem', background: '#1c252e', borderRadius: '4px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                          <strong style={{ color: '#00e5ff' }}>{msg.user_name}</strong>
-                          <span style={{ fontSize: '0.7rem', color: '#888' }}>{formatTime(msg.created_at)}</span>
-                        </div>
-                        {repliedMsg && (
-                          <div style={{ fontSize: '0.75rem', color: '#aaa', borderLeft: '2px solid #555', paddingLeft: '4px', marginBottom: '4px' }}>
-                            Replying to <strong>{repliedMsg.user_name}</strong>: {repliedMsg.content.length > 40 ? repliedMsg.content.substring(0, 40) + '...' : repliedMsg.content}
-                          </div>
-                        )}
-                        <p style={{ margin: 0, fontSize: '0.9rem' }}>{msg.content}</p>
-                        <div style={{ textAlign: 'right', marginTop: '4px' }}>
-                          <button type="button" className="btn-ghost" style={{ fontSize: '0.7rem', padding: '2px 6px' }} onClick={() => setReplyTo(msg)}>Reply</button>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </>
-            ) : (
-              <>
-                {selectedContact ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'hidden' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', padding: '10px', borderBottom: '1px solid #2a3848', background: '#1c252e' }}>
-                      <button type="button" className="btn-ghost" onClick={() => setSelectedContact(null)} style={{ padding: '4px 8px', marginRight: '10px' }}>&larr; Back</button>
-                      <div className="avatar">
-                        {selectedContact.charAt(0).toUpperCase()}
-                        <span className={`status-dot ${contacts.find(c => c.user_name === selectedContact) &&
-                          (new Date() - new Date(contacts.find(c => c.user_name === selectedContact).last_seen) < 30000)
-                          ? 'online'
-                          : 'offline'
-                          }`}></span>
-                      </div>
-                      <div>
-                        <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#00e5ff' }}>{selectedContact}</h3>
-                        <span style={{ fontSize: '0.8rem', color: '#888' }}>
-                          {contacts.find(c => c.user_name === selectedContact) && (new Date() - new Date(contacts.find(c => c.user_name === selectedContact).last_seen) < 30000) ? 'Online' : 'Offline'}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="chat-input-box" style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '1rem', padding: '10px' }}>
-                      <textarea
-                        rows={2}
-                        placeholder="Type a message..."
-                        className='text-area-value'
-                        value={personalDraft}
-                        onChange={(e) => setPersonalDraft(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && !e.shiftKey) {
-                            e.preventDefault();
-                            handleSendPersonalChat();
-                          }
-                        }}
-                      />
-                      <button type="button" className="btn-ai-primary" onClick={handleSendPersonalChat} style={{ padding: '6px' }}>Send</button>
-                    </div>
-                    <ul className="chat-list" style={{ flex: 1, overflowY: 'auto', marginBottom: '1rem', listStyle: 'none', padding: 0 }}>
-                      {personalMessages.length === 0 && <li className="empty">No messages yet</li>}
-                      {personalMessages.map((msg) => (
-                        <li key={msg.id} className="chat-msg" style={{ marginBottom: '0.75rem', padding: '0.5rem', background: msg.sender_name === userName ? '#2a3848' : '#1c252e', borderRadius: '4px', marginLeft: msg.sender_name === userName ? '20px' : '0', marginRight: msg.sender_name === userName ? '0' : '20px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                            <strong style={{ color: msg.sender_name === userName ? '#a78bfa' : '#00e5ff' }}>{msg.sender_name}</strong>
-                            <span style={{ fontSize: '0.7rem', color: '#888' }}>{formatTime(msg.created_at)}</span>
-                          </div>
-                          <p style={{ margin: 0, fontSize: '0.9rem' }}>{msg.content}</p>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'hidden' }}>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '0 0 10px 0' }}>
-                      <button type="button" className="btn-danger-outline" style={{ fontSize: '0.75rem', padding: '4px 8px' }} onClick={() => { setDeleteTarget('personal'); setDeleteOpen(true); }}>Delete</button>
-                    </div>
-                    <ul style={{ flex: 1, overflowY: 'auto', listStyle: 'none', padding: 0, margin: 0 }}>
-                      {contacts.length === 0 && <li className="empty">No other users online yet</li>}
-                      {contacts.map((c) => (
-                        <li key={c.user_name} style={{ padding: '10px', borderBottom: '1px solid #2a3848', cursor: 'pointer', display: 'flex', alignItems: 'center' }} onClick={() => setSelectedContact(c.user_name)}>
-                          <div className="avatar" style={{ marginRight: '10px' }}>
-                            {c.user_name.charAt(0).toUpperCase()}
-                            <span className={`status-dot ${(new Date() - new Date(c.last_seen) < 30000) ? 'online' : 'offline'}`}></span>
-                          </div>
-                          <div style={{ flex: 1, overflow: 'hidden' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <strong style={{ fontSize: '1.1rem', color: '#e8eaed' }}>{c.user_name}</strong>
-                              {c.unread_count > 0 && (
-                                <span className="contact-unread-badge">
-                                  {c.unread_count} new
-                                </span>
-                              )}
-                            </div>
-                            {c.last_message && (
-                              <div style={{ fontSize: '0.85rem', color: '#888', marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {c.last_message}
-                              </div>
-                            )}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
                 )}
-              </>
-            )}
-          </aside>
 
-          <main className="answer-main">
-            <p className="answer-hint">
-              For each question: pick an <strong>option</strong> (left) and write your{' '}
-              <strong>explanation</strong> (right), then Save.
-            </p>
+                {!isRecording && (
+                  <button className="btn-icon-large" title="Voice Message" onClick={startRecording} disabled={activeChat === 'personal' && !selectedContact}>
+                    <i className="fa fa-microphone"></i>
+                  </button>
+                )}
 
+                <button 
+                  className="btn-send-message"
+                  onClick={handleInterceptSend}
+                  disabled={
+                    !isRecording && (
+                      (activeChat === 'ai' && (aiLoading || (!aiDraft.trim() && aiImages.length === 0))) ||
+                      (activeChat === 'team' && (!chatDraft.trim() && draftImages.length === 0)) ||
+                      (activeChat === 'personal' && ((!personalDraft.trim() && draftImages.length === 0) || !selectedContact))
+                    )
+                  }
+                >
+                  &#10148;
+                </button>
+              </div>
 
+              {activeChat === 'ai' && (
+                <div className="ai-disclaimer">
+                  AI can make mistakes. Check important info.
+                </div>
+              )}
 
-            <div className="question-list">
-              {/* {questions.map((q) => { */}
-              {questions
-                .slice(0, showAllQuestions ? questions.length : 20)
-                .map((q) => {
-                  const saved = answerByQ[q.number];
-                  const lastComment = latestCommentByQ[q.number];
-                  return (
-                    <article key={q.number} className="q-card">
-                      <header className="q-card-head">
-                        <span className="q-badge">{q.number}</span>
-                        <h3 className="q-title">{formatQuestionLabel(q.number, q.text)}</h3>
-                        {saved && <span className="q-meta">{optionMetaLabel(saved)}</span>}
-                      </header>
-
-                      <div className="q-inputs">
-                        <label className="input-block option-block">
-                          <span className="input-label">Option</span>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            maxLength={3}
-                            placeholder="1"
-                            value={optionDrafts[q.number] !== undefined ? optionDrafts[q.number] : (saved?.answer_text || '')}
-                            onChange={(e) =>
-                              setOptionDrafts((prev) => ({
-                                ...prev,
-                                [q.number]: e.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-
-                        <label className="input-block comment-block">
-                          <span className="input-label">Explanation</span>
-                          <input
-                            type="text"
-                            placeholder="Why you chose this option..."
-                            value={commentDrafts[q.number] !== undefined ? commentDrafts[q.number] : (lastComment?.comment_text || '')}
-                            onChange={(e) =>
-                              setCommentDrafts((prev) => ({
-                                ...prev,
-                                [q.number]: e.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-                      </div>
-
-                      <div className="q-card-actions">
-                        <div className="q-card-foot">
-                          <button
-                            type="button"
-                            className="btn-save"
-                            disabled={saving === q.number}
-                            onClick={() => handleSave(q.number)}
-                          >
-                            {saving === q.number ? 'Saving…' : 'Save'}
-                          </button>
-                        </div>
-                        {(saved?.answer_text || lastComment) && (
-                          <div className="q-saved-below">
-                            {saved?.answer_text && (
-                              <p className="saved-option">
-                                Saved option: <strong>{saved.answer_text}</strong>
-                              </p>
-                            )}
-                            {lastComment && (
-                              <p className="saved-comment">
-                                Latest explanation: <em>{lastComment.comment_text}</em>
-                              </p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-
-                      <QuestionAiResponses
-                        questionNumber={q.number}
-                        responses={aiResponses}
-                        questions={questions}
-                        expandedIds={expandedAiIds}
-                        onToggle={toggleAiExpand}
-                        onRecheck={handleRecheckAi}
-                        recheckLoading={recheckLoading}
-                      />
-                    </article>
-                  );
-                })}
             </div>
           </main>
-
-          <aside className="answer-side right" style={{ background: 'transparent', border: 'none' }}>
-            <h2 style={{ paddingLeft: '1rem' }}>Answer Sheet</h2>
-            <ul className="activity-list" style={{ overflowY: 'auto', padding: '0 1rem' }}>
-              {/* {questions.slice(0, 20).map((q) => { */}
-              {questions.slice(0, 20).map((q) => {
-                const ans = answerByQ[q.number];
-                const cmt = latestCommentByQ[q.number];
-                return (
-                  <li key={q.number} style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '10px 0', borderBottom: '1px solid #1c252e' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <strong style={{ color: '#00e5ff', fontSize: '1.1rem' }}>Q{q.number}</strong>
-                      <input
-                        type="text"
-                        maxLength={3}
-                        style={{ width: '45px', padding: '4px', background: '#0c1014', color: '#fff', border: '1px solid #00e5ff', borderRadius: '4px', textAlign: 'center', fontSize: '1rem', fontWeight: 'bold' }}
-                        value={optionDrafts[q.number] !== undefined ? optionDrafts[q.number] : (ans?.answer_text || '')}
-                        onChange={(e) => setOptionDrafts(prev => ({ ...prev, [q.number]: e.target.value }))}
-                        onBlur={() => handleSave(q.number)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            handleSave(q.number);
-                            e.target.blur();
-                          }
-                        }}
-                      />
-                    </div>
-                    {cmt && (
-                      <p style={{ fontSize: '0.85rem', color: '#888', margin: 0 }}>
-                        {cmt.comment_text}
-                      </p>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </aside>
         </div>
+      </div>
 
-        <div className="bottom-sections" style={{ display: 'flex', gap: '1rem', padding: '1rem', marginTop: '2rem', flexWrap: 'nowrap', justifyContent: 'space-between', overflowX: 'auto', alignItems: 'stretch' }}>
-          <aside className="answer-side" style={{ flex: '1 1 0', minWidth: '250px', display: 'flex', flexDirection: 'column' }}>
-            <h2>Recent activity</h2>
-            <ul className="activity-list" style={{ flex: 1, overflowY: 'auto' }}>
-              {recent.length === 0 && <li className="empty">No activity yet</li>}
-              {recent.map((item) => {
-                const q = item.question_number;
-                const currentOption = answerByQ[q]?.answer_text || '';
-                const comment =
-                  item.activity_type === 'commented'
-                    ? item.new_value
-                    : latestCommentByQ[q]?.comment_text || '';
-                const option =
-                  item.activity_type === 'commented'
-                    ? currentOption
-                    : item.new_value || currentOption;
-                return (
-                  <RecentItem
-                    key={item.id}
-                    item={item}
-                    option={option}
-                    comment={comment}
-                  />
-                );
-              })}
-            </ul>
-          </aside>
-
-          <section className="comment-log answer-side" style={{ flex: '1 1 0', minWidth: '250px', display: 'flex', flexDirection: 'column' }}>
-            <h2>Explanation log</h2>
-            <ul className="activity-list" style={{ flex: 1, overflowY: 'auto' }}>
-              {comments.length === 0 ? (
-                <li className="empty-feed">No explanations posted yet</li>
-              ) : (
-                comments.map((c) => (
-                  <li key={c.id} className="log-row activity-item">
-                    <p className="activity-headline">
-                      <strong>{c.user_name}</strong> added explanation on{' '}
-                      <span className="q-num">Q{c.question_number}</span>
-                    </p>
-                    <div className="activity-line">
-                      option —{' '}
-                      <span className="activity-val">
-                        {answerByQ[c.question_number]?.answer_text || '—'}
-                      </span>
-                    </div>
-                    <div className="activity-line">
-                      Comment — <span className="activity-val">"{c.comment_text}"</span>
-                    </div>
-                    <time>{formatTime(c.created_at)}</time>
-                  </li>
-                ))
-              )}
-            </ul>
-          </section>
-
-          <aside className="answer-side" style={{ flex: '1 1 0', minWidth: '250px', display: 'flex', flexDirection: 'column' }}>
-            <h2>Updated activity</h2>
-            <ul className="activity-list" style={{ flex: 1, overflowY: 'auto' }}>
-              {updates.length === 0 && <li className="empty">No updates yet</li>}
-              {updates.map((item) => (
-                <UpdateItem key={item.id} item={item} />
-              ))}
-            </ul>
-          </aside>
-
-          <div style={{ flex: '1 1 0', minWidth: '250px', display: 'flex' }}>
-            <AiModePanel
-              responses={aiResponses}
-              questions={questions}
-              expandedId={expandedAiId}
-              onToggle={setExpandedAiId}
-              onRecheck={handleRecheckAi}
-              recheckLoading={recheckLoading}
-            />
+      {deferredPrompt && showInstallBanner && (
+        <div className="cookie-toast">
+          <span style={{color: '#fff', fontSize: '0.9rem'}}>Install our App for a better experience!</span>
+          <div style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
+            <button className="btn-primary btn-small" onClick={handleInstallApp}>Install</button>
+            <button className="btn-icon" onClick={() => setShowInstallBanner(false)}>&times;</button>
           </div>
         </div>
+      )}
 
-      </div>
+      <CreateGroupModal open={createGroupModalOpen} onClose={() => setCreateGroupModalOpen(false)} onCreate={handleCreateGroup} contacts={contacts} />
+      <PrivacySettingsModal open={privacyModalOpen} onClose={() => setPrivacyModalOpen(false)} contacts={contacts} profileVisibility={profileVisibility} visibleToContacts={visibleToContacts} onSave={handleSavePrivacy} />
+      <RenameModal open={renameOpen} onClose={() => !renameLoading && setRenameOpen(false)} onConfirm={handleRename} loading={renameLoading} error={renameError} currentName={userName} />
+      <DeleteUserModal open={deleteUserOpen} onClose={() => { setDeleteUserOpen(false); setDeleteUserError(''); }} onConfirm={handleDeleteUser} loading={deleteUserLoading} error={deleteUserError} users={contacts} />
+      <DeleteModal open={deleteOpen} onClose={() => !deleteLoading && setDeleteOpen(false)} onConfirm={handleDeleteAll} loading={deleteLoading} error={deleteError} title="Delete all data" description="This removes all options, comments, and messages. Cannot be undone." confirmText="Delete everything" />
+      <DeleteModal open={clearAiOpen} onClose={() => !clearAiLoading && setClearAiOpen(false)} onConfirm={handleClearAiChatConfirm} loading={clearAiLoading} error={clearAiError} title="Clear AI Chat" description="Please enter the admin ID and admin password to clear all AI history." confirmText="Clear AI Chat" />
     </div>
   );
 }

@@ -1,5 +1,6 @@
-const API = process.env.REACT_APP_API_URL || 'https://answer-backend.vercel.app';
+//const API = process.env.REACT_APP_API_URL || 'http://localhost:3030';
 
+const API = process.env.REACT_APP_API_URL || 'http://localhost:3030';
 export async function fetchJson(path, options) {
   const res = await fetch(`${API}${path}`, {
     cache: 'no-store',
@@ -33,10 +34,12 @@ export const checkUser = (userName) =>
   fetchJson(`/api/user/check?user_name=${encodeURIComponent(userName)}`);
 export const renameUser = (body) =>
   fetchJson('/api/user/rename', { method: 'POST', body: JSON.stringify(body) });
-export const getAiResponses = () => fetchJson('/api/ai/responses');
+export const getAiResponses = (userName) => fetchJson(`/api/ai/responses?user_name=${encodeURIComponent(userName)}`);
+export const clearAiChat = (userName) => fetchJson(`/api/ai/responses/clear?user_name=${encodeURIComponent(userName)}`, { method: 'DELETE' });
+export const clearPersonalChat = (user1, user2) => fetchJson(`/api/personal_chat/clear?user1=${encodeURIComponent(user1)}&user2=${encodeURIComponent(user2)}`, { method: 'DELETE' });
 export const saveAiResponse = (body) =>
   fetchJson('/api/ai/responses', { method: 'POST', body: JSON.stringify(body) });
-export const callOpenAI = (body) =>
+export const callDeepAI = (body) =>
   fetchJson('/api/ai/call', { method: 'POST', body: JSON.stringify(body) });
 export const getCode = () => fetchJson('/api/code');
 export const saveCode = (body) =>

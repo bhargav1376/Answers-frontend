@@ -40,21 +40,21 @@ function formatTime(iso) {
 
 function Typewriter({ text }) {
   const [displayed, setDisplayed] = useState('');
-  
+
   useEffect(() => {
     setDisplayed('');
     if (!text) return;
-    
+
     // Split by spaces but preserve whitespace tokens
     const tokens = text.split(/(\s+)/);
     let i = 0;
-    
+
     const interval = setInterval(() => {
       setDisplayed((prev) => prev + (tokens[i] || ''));
       i++;
       if (i >= tokens.length) clearInterval(interval);
     }, 50);
-    
+
     return () => clearInterval(interval);
   }, [text]);
 
@@ -93,7 +93,7 @@ function CustomAudioPlayer({ src }) {
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    
+
     const updateProgress = () => setProgress((audio.currentTime / audio.duration) * 100);
     const updateDuration = () => setDuration(audio.duration);
     const handleEnded = () => { setPlaying(false); setProgress(0); };
@@ -146,6 +146,58 @@ function CustomAudioPlayer({ src }) {
   );
 }
 
+function SplashScreen({ onComplete }) {
+  const [isFadingOut, setIsFadingOut] = useState(false);
+
+  useEffect(() => {
+    const fadeTimer = setTimeout(() => {
+      setIsFadingOut(true);
+    }, 2700);
+
+    const completeTimer = setTimeout(() => {
+      onComplete();
+    }, 3500);
+
+    return () => {
+      clearTimeout(fadeTimer);
+      clearTimeout(completeTimer);
+    };
+  }, [onComplete]);
+
+  const handleSkip = () => {
+    setIsFadingOut(true);
+    setTimeout(() => {
+      onComplete();
+    }, 500);
+  };
+
+  return (
+    <div className={`splash-container ${isFadingOut ? 'fade-out' : ''}`}>
+      <button className="splash-skip-btn" onClick={handleSkip}>
+        Skip Intro &rarr;
+      </button>
+
+      <div className="splash-glow glow-blue"></div>
+      <div className="splash-glow glow-green"></div>
+      <div className="splash-glow glow-orange"></div>
+
+      <div className="splash-logo-wrapper">
+        <div className="splash-ring"></div>
+        <img
+          src={process.env.PUBLIC_URL + '/Logo.png'}
+          alt="The BA Chat Logo"
+          className="splash-logo"
+        />
+      </div>
+
+      <h1 className="splash-title">
+        The <span className="letter-b">B</span> <span className="letter-a">A</span> Chat
+      </h1>
+      <p className="splash-tagline">Connect. Collaborate. Smile.</p>
+    </div>
+  );
+}
+
 function NameGate({ onSubmit }) {
   const [name, setName] = useState('');
   const [error, setError] = useState('');
@@ -159,7 +211,7 @@ function NameGate({ onSubmit }) {
       const res = await checkUser(name.trim());
       if (res.exists) setError('This name is already taken. Click "Force Login" if this is you.');
       else onSubmit(name.trim());
-    } catch (e) { setError('Failed to check name: ' + e.message); } 
+    } catch (e) { setError('Failed to check name: ' + e.message); }
     finally { setLoading(false); }
   };
 
@@ -214,9 +266,9 @@ function DeleteUserModal({ open, onClose, onConfirm, loading, error, users }) {
         <h3>Delete User & All Data</h3>
         <p>This will delete the user and all their comments, and messages.</p>
         <label>User to Delete<select value={targetUser} onChange={(e) => setTargetUser(e.target.value)}>
-            <option value="">-- Select a user --</option>
-            {users && users.map(u => <option key={u.user_name} value={u.user_name}>{u.user_name}</option>)}
-          </select></label>
+          <option value="">-- Select a user --</option>
+          {users && users.map(u => <option key={u.user_name} value={u.user_name}>{u.user_name}</option>)}
+        </select></label>
         <label>Admin ID<input type="text" value={adminId} onChange={(e) => setAdminId(e.target.value)} /></label>
         <label>Admin Password<input type="password" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} /></label>
         {error && <div className="modal-error">{error}</div>}
@@ -243,7 +295,7 @@ function DeleteModal({ open, onClose, onConfirm, loading, error, title, descript
         <h2>{title || 'Delete data'}</h2>
         <p>{description}</p>
         {error && <div className="modal-error">{error}</div>}
-        <label>ID<input type="text" value={adminId} onChange={(e) => setAdminId(e.target.value)} autoFocus/></label>
+        <label>ID<input type="text" value={adminId} onChange={(e) => setAdminId(e.target.value)} autoFocus /></label>
         <label>Password<input type="password" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} /></label>
         <div className="modal-actions">
           <button type="button" className="btn-glass" onClick={onClose} disabled={loading}>Cancel</button>
@@ -285,15 +337,15 @@ function CreateGroupModal({ open, onClose, onCreate, contacts }) {
       <div className="modal-card glass-panel">
         <h3>Create New Group</h3>
         <p>Start a new group chat with your team. Select at least 1 contact.</p>
-        <label>Group Name *<input type="text" value={groupName} onChange={(e) => setGroupName(e.target.value)} autoFocus/></label>
+        <label>Group Name *<input type="text" value={groupName} onChange={(e) => setGroupName(e.target.value)} autoFocus /></label>
         <label>Description<input type="text" value={groupDesc} onChange={(e) => setGroupDesc(e.target.value)} /></label>
         <div className="privacy-contacts-select" style={{ marginTop: '12px' }}>
           <strong>Select Participants:</strong>
           {(!contacts || contacts.length === 0) ? <p>No contacts available</p> : contacts.map(c => (
-              <label key={c.user_name} className="checkbox-label">
-                <input type="checkbox" checked={selectedContacts.has(c.user_name)} onChange={() => handleToggle(c.user_name)}/>{c.user_name}
-              </label>
-            ))}
+            <label key={c.user_name} className="checkbox-label">
+              <input type="checkbox" checked={selectedContacts.has(c.user_name)} onChange={() => handleToggle(c.user_name)} />{c.user_name}
+            </label>
+          ))}
         </div>
         <div className="modal-actions">
           <button type="button" className="btn-glass" onClick={onClose}>Cancel</button>
@@ -327,15 +379,15 @@ function PrivacySettingsModal({ open, onClose, contacts, profileVisibility, visi
         <p>Control who can see your profile photo and online status.</p>
         <div className="privacy-option-group">
           <strong>Who can see my profile?</strong>
-          <label className="radio-label"><input type="radio" value="everyone" checked={visibility === 'everyone'} onChange={() => setVisibility('everyone')}/> Everyone</label>
-          <label className="radio-label"><input type="radio" value="selected" checked={visibility === 'selected'} onChange={() => setVisibility('selected')}/> Only Selected</label>
-          <label className="radio-label"><input type="radio" value="nobody" checked={visibility === 'nobody'} onChange={() => setVisibility('nobody')}/> Nobody</label>
+          <label className="radio-label"><input type="radio" value="everyone" checked={visibility === 'everyone'} onChange={() => setVisibility('everyone')} /> Everyone</label>
+          <label className="radio-label"><input type="radio" value="selected" checked={visibility === 'selected'} onChange={() => setVisibility('selected')} /> Only Selected</label>
+          <label className="radio-label"><input type="radio" value="nobody" checked={visibility === 'nobody'} onChange={() => setVisibility('nobody')} /> Nobody</label>
         </div>
         {visibility === 'selected' && (
           <div className="privacy-contacts-select">
             <strong>Allow access for:</strong>
             {contacts.length === 0 ? <p>No contacts online</p> : contacts.map(c => (
-              <label key={c.user_name} className="checkbox-label"><input type="checkbox" checked={selectedContacts.has(c.user_name)} onChange={() => handleToggleContact(c.user_name)}/> {c.user_name}</label>
+              <label key={c.user_name} className="checkbox-label"><input type="checkbox" checked={selectedContacts.has(c.user_name)} onChange={() => handleToggleContact(c.user_name)} /> {c.user_name}</label>
             ))}
           </div>
         )}
@@ -349,17 +401,18 @@ function PrivacySettingsModal({ open, onClose, contacts, profileVisibility, visi
 }
 
 export default function Answer({ onNavCode }) {
+  const [showSplash, setShowSplash] = useState(true);
   const [userName, setUserName] = useState(() => localStorage.getItem(NAME_KEY) || '');
   const [activeChat, setActiveChat] = useState('ai');
   const [mobilePane, setMobilePane] = useState('list');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  
-  const [groups, setGroups] = useState([ { id: 'team', name: 'Team Chat', description: 'General collaboration sheet channel', participants: [] } ]);
+
+  const [groups, setGroups] = useState([{ id: 'team', name: 'Team Chat', description: 'General collaboration sheet channel', participants: [] }]);
   const [activeGroupId, setActiveGroupId] = useState('team');
 
   const [profileVisibility, setProfileVisibility] = useState('everyone');
   const [visibleToContacts, setVisibleToContacts] = useState([]);
-  
+
   const [chatMessages, setChatMessages] = useState([]);
   const [chatDraft, setChatDraft] = useState('');
   const [replyTo, setReplyTo] = useState(null);
@@ -368,7 +421,7 @@ export default function Answer({ onNavCode }) {
   const [selectedContact, setSelectedContact] = useState(null);
   const [personalMessages, setPersonalMessages] = useState([]);
   const [personalDraft, setPersonalDraft] = useState('');
-  
+
   const [aiResponses, setAiResponses] = useState([]);
   const [aiDraft, setAiDraft] = useState('');
   const [aiImages, setAiImages] = useState([]);
@@ -376,12 +429,12 @@ export default function Answer({ onNavCode }) {
 
   const [showStickers, setShowStickers] = useState(false);
   const [draftImages, setDraftImages] = useState([]);
-  
+
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioDraft, setAudioDraft] = useState(null);
-  
+
   const [isScrolledUp, setIsScrolledUp] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -445,12 +498,12 @@ export default function Answer({ onNavCode }) {
     const now = Date.now();
     if (now - lastTypingPingRef.current > 3000) {
       lastTypingPingRef.current = now;
-      pingUser({ user_name: userName, typing_on: target }).catch(() => {});
+      pingUser({ user_name: userName, typing_on: target }).catch(() => { });
     }
-    
+
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     typingTimeoutRef.current = setTimeout(() => {
-      pingUser({ user_name: userName, typing_on: null }).catch(() => {});
+      pingUser({ user_name: userName, typing_on: null }).catch(() => { });
     }, 3000);
   };
 
@@ -495,7 +548,7 @@ export default function Answer({ onNavCode }) {
       setIsRecording(true);
       setIsPaused(false);
       setRecordingTime(0);
-      
+
       timerRef.current = setInterval(() => setRecordingTime(prev => prev + 1), 1000);
     } catch (err) {
       showToast("Microphone access denied.", 'error');
@@ -549,14 +602,14 @@ export default function Answer({ onNavCode }) {
 
   const executeDispatchSend = (finalAudioBase64) => {
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    pingUser({ user_name: userName, typing_on: null }).catch(() => {});
+    pingUser({ user_name: userName, typing_on: null }).catch(() => { });
 
     setAudioDraft(null);
     if (activeChat === 'ai') handleSendAiChat(finalAudioBase64);
     else if (activeChat === 'team') handleSendChat(finalAudioBase64);
     else if (activeChat === 'personal') handleSendPersonalChat(finalAudioBase64);
   };
-  
+
   const handleClearAiChatConfirm = async (adminId, adminPassword) => {
     setClearAiLoading(true);
     setClearAiError('');
@@ -591,25 +644,25 @@ export default function Answer({ onNavCode }) {
 
   const handleSendAiChat = async (audioToSend = null) => {
     if (!aiDraft.trim() && aiImages.length === 0 && !audioToSend) return;
-    
+
     const tempId = Date.now();
     const promptText = audioToSend ? (aiDraft.trim() || '[Voice Message]') : aiDraft.trim();
-    const finalStoredPrompt = audioToSend || promptText; 
-    
+    const finalStoredPrompt = audioToSend || promptText;
+
     const newAiMessage = {
       id: tempId, question_number: 1, response_index: aiResponses.length + 1,
       user_name: userName, question_prompt: finalStoredPrompt, raw_response: '...',
       images: aiImages, created_at: new Date().toISOString()
     };
-    
+
     setAiResponses(prev => [...prev, newAiMessage]);
     setAiLoading(true);
-    
+
     const submittedDraft = promptText;
     const submittedImages = [...aiImages];
     setAiDraft('');
     setAiImages([]);
-    
+
     try {
       const rawData = await callDeepAI({ questionText: submittedDraft, sheetOption: '', sheetExplanation: '', images: submittedImages, user_name: userName });
       const savedRow = await saveAiResponse({
@@ -642,7 +695,7 @@ export default function Answer({ onNavCode }) {
   const handleSendSticker = async (stickerId) => {
     const stickerString = `[STICKER:${stickerId}]`;
     setShowStickers(false);
-    
+
     if (activeChat === 'ai') {
       setAiLoading(true);
       try {
@@ -654,7 +707,7 @@ export default function Answer({ onNavCode }) {
           ai_option: null, ai_explanation: null, raw_response: rawData.text || '', images: [],
         });
         setAiResponses(prev => [...prev, { ...savedRow, isNew: true }]);
-      } catch (e) { showToast(e.message); } 
+      } catch (e) { showToast(e.message); }
       finally { setAiLoading(false); }
     } else if (activeChat === 'team') {
       const tempId = Date.now();
@@ -691,7 +744,7 @@ export default function Answer({ onNavCode }) {
           return [];
         }),
       ]);
-      
+
       // Preserve isNew flag for AI responses if they already exist in state,
       // and retain any temporary loading messages (with raw_response: '...')
       setAiResponses(prev => {
@@ -703,7 +756,7 @@ export default function Answer({ onNavCode }) {
         });
         return [...updated, ...loadingMessages];
       });
-      
+
       const prevTeamCount = lastMsgCountRef.current.team;
       if (prevTeamCount > 0 && chatMsgs.length > prevTeamCount) {
         const newMsgs = chatMsgs.slice(prevTeamCount);
@@ -725,32 +778,32 @@ export default function Answer({ onNavCode }) {
     if (!userName) return;
     loadAll();
     const id = setInterval(loadAll, 3000);
-    const pingId = setInterval(() => { pingUser({ user_name: userName }).catch(() => {}); }, 10000);
+    const pingId = setInterval(() => { pingUser({ user_name: userName }).catch(() => { }); }, 10000);
     return () => { clearInterval(id); clearInterval(pingId); };
   }, [userName, loadAll]);
 
   const handleName = async (name) => {
     localStorage.setItem(NAME_KEY, name);
     setUserName(name);
-    try { await loginUser({ user_name: name }); await loadAll(name); } catch (e) {}
+    try { await loginUser({ user_name: name }); await loadAll(name); } catch (e) { }
   };
 
   const handleSendChat = (audioToSend = null) => {
     if (!chatDraft.trim() && draftImages.length === 0 && !audioToSend) return;
-    
+
     const imgs = [...draftImages];
     const text = chatDraft.trim();
     const tempIdBase = Date.now();
-    
+
     const newMsgs = [];
     if (audioToSend) newMsgs.push({ id: tempIdBase - 1, user_name: userName, content: audioToSend, created_at: new Date().toISOString(), reply_to_id: replyTo ? replyTo.id : null });
     imgs.forEach((img, idx) => newMsgs.push({ id: tempIdBase + idx, user_name: userName, content: img, created_at: new Date().toISOString(), reply_to_id: replyTo ? replyTo.id : null }));
     if (text) newMsgs.push({ id: tempIdBase + 100, user_name: userName, content: text, created_at: new Date().toISOString(), reply_to_id: replyTo ? replyTo.id : null });
-    
+
     setChatMessages(prev => [...prev, ...newMsgs]);
     setChatDraft('');
     setDraftImages([]);
-    
+
     setTimeout(async () => {
       try {
         if (audioToSend) await postChatMessage({ user_name: userName, content: audioToSend, reply_to_id: replyTo ? replyTo.id : null });
@@ -782,7 +835,7 @@ export default function Answer({ onNavCode }) {
           await markPersonalChatRead({ sender_name: selectedContact, receiver_name: userName });
           loadAll();
         }
-      } catch (e) {}
+      } catch (e) { }
     };
     loadMsgs();
     const id = setInterval(loadMsgs, 3000);
@@ -791,20 +844,20 @@ export default function Answer({ onNavCode }) {
 
   const handleSendPersonalChat = (audioToSend = null) => {
     if ((!personalDraft.trim() && draftImages.length === 0 && !audioToSend) || !selectedContact) return;
-    
+
     const imgs = [...draftImages];
     const text = personalDraft.trim();
     const tempIdBase = Date.now();
-    
+
     const newMsgs = [];
     if (audioToSend) newMsgs.push({ id: tempIdBase - 1, sender_name: userName, receiver_name: selectedContact, content: audioToSend, created_at: new Date().toISOString() });
     imgs.forEach((img, idx) => newMsgs.push({ id: tempIdBase + idx, sender_name: userName, receiver_name: selectedContact, content: img, created_at: new Date().toISOString() }));
     if (text) newMsgs.push({ id: tempIdBase + 100, sender_name: userName, receiver_name: selectedContact, content: text, created_at: new Date().toISOString() });
-    
+
     setPersonalMessages(prev => [...prev, ...newMsgs]);
     setPersonalDraft('');
     setDraftImages([]);
-    
+
     setTimeout(async () => {
       try {
         if (audioToSend) await postPersonalChatMessage({ sender_name: userName, receiver_name: selectedContact, content: audioToSend });
@@ -876,7 +929,7 @@ export default function Answer({ onNavCode }) {
     if (!searchQuery.trim()) return;
     const query = searchQuery.toLowerCase();
     let foundIds = [];
-    
+
     if (activeChat === 'ai') foundIds = [...aiResponses].filter(m => (m.question_prompt || '').toLowerCase().includes(query) || (m.raw_response || '').toLowerCase().includes(query)).map(m => `msg-ai-${m.id}`);
     else if (activeChat === 'team') foundIds = [...chatMessages].filter(m => m.content.toLowerCase().includes(query)).map(m => `msg-team-${m.id}`);
     else if (activeChat === 'personal') foundIds = [...personalMessages].filter(m => m.content.toLowerCase().includes(query)).map(m => `msg-personal-${m.id}`);
@@ -898,7 +951,7 @@ export default function Answer({ onNavCode }) {
     setSearchIndex(nextIdx);
     scrollToMatch(searchResults[nextIdx]);
   };
-  
+
   const handleSearchPrev = () => {
     if (searchResults.length === 0) return;
     let prevIdx = searchIndex - 1;
@@ -921,6 +974,7 @@ export default function Answer({ onNavCode }) {
     return <p>{contentStr}</p>;
   };
 
+  if (showSplash) return <SplashScreen onComplete={() => setShowSplash(false)} />;
   if (!userName) return <NameGate onSubmit={handleName} />;
   const isProfileVisibleTo = (contactName) => {
     if (profileVisibility === 'everyone') return true;
@@ -955,16 +1009,18 @@ export default function Answer({ onNavCode }) {
       {/* Global Header */}
       <header className="app-global-header glass-panel">
         <div className="header-brand">
-          <span className="brand-logo">💬</span>
-          <h1>Chat Workspace</h1>
+          <img src={process.env.PUBLIC_URL + '/Logo.png'} alt="Logo" className="brand-logo" />
+          <h1>
+            The <span style={{ letterSpacing: '-4px' }}>B</span> <span style={{ fontSize: '25px', letterSpacing: '-2px' }}>A</span> Chat
+          </h1>
         </div>
-        
+
         <button className="mobile-hamburger" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
           <i className={mobileMenuOpen ? "fa fa-times" : "fa fa-bars"}></i>
         </button>
 
         <div className={`header-controls ${mobileMenuOpen ? 'mobile-open' : ''}`}>
-          <span className="current-user-badge" style={{marginBottom: mobileMenuOpen ? '8px' : '0'}}>👤 {userName}</span>
+          <span className="current-user-badge" style={{ marginBottom: mobileMenuOpen ? '8px' : '0' }}>👤 {userName}</span>
           <button type="button" className="btn-glass" onClick={() => { setMobileMenuOpen(false); onNavCode(); }}>Code Data</button>
           <button type="button" className="btn-glass" onClick={() => { setMobileMenuOpen(false); setRenameOpen(true); }}>Rename</button>
           <button type="button" className="btn-glass btn-danger" onClick={() => { setMobileMenuOpen(false); setClearAiOpen(true); }}>Clear AI Chat</button>
@@ -975,7 +1031,7 @@ export default function Answer({ onNavCode }) {
 
       <div className="chat-app-container">
         <div className={`chat-layout show-${mobilePane}`}>
-          
+
           <aside className="chat-sidebar glass-panel">
             <div className="sidebar-profile-card">
               <div className="profile-avatar-large" onClick={() => setPrivacyModalOpen(true)} title="Privacy Settings">
@@ -1023,7 +1079,7 @@ export default function Answer({ onNavCode }) {
                   const isSelected = activeChat === 'personal' && selectedContact === c.user_name;
                   const allowedToSee = isProfileVisibleTo(c.user_name);
                   const isTypingToUs = isOnline && c.typing_on === userName && (new Date() - new Date(c.typing_at) < 5000);
-                  
+
                   return (
                     <li key={c.user_name} className={`thread-item ${isSelected ? 'active' : ''}`} onClick={() => { setActiveChat('personal'); setSelectedContact(c.user_name); setMobilePane('chat'); setIsSearching(false); setSearchResults([]); }}>
                       <div className="thread-avatar user">
@@ -1055,7 +1111,7 @@ export default function Answer({ onNavCode }) {
           <main className="chat-main glass-panel">
             <div className="chat-header">
               <button className="mobile-back-btn" onClick={() => setMobilePane('list')}>&larr; Back</button>
-              
+
               {activeChat === 'ai' && (
                 <div className="chat-header-details">
                   <div className="thread-avatar ai">AI</div>
@@ -1064,7 +1120,7 @@ export default function Answer({ onNavCode }) {
               )}
               {activeChat === 'team' && (() => {
                 const teamTypingUsers = contacts.filter(c => c.typing_on === 'team' && (new Date() - new Date(c.typing_at) < 5000) && (new Date() - new Date(c.last_seen) < 30000));
-                const teamTypingText = teamTypingUsers.length > 0 
+                const teamTypingText = teamTypingUsers.length > 0
                   ? `${teamTypingUsers.map(u => u.user_name).join(', ')} ${teamTypingUsers.length === 1 ? 'is' : 'are'} typing...`
                   : currentActiveGroup.description;
                 return (
@@ -1097,7 +1153,7 @@ export default function Answer({ onNavCode }) {
                   )}
                 </div>
               )}
-              
+
               <div style={{ flex: 1 }}></div>
 
               {!isSearching ? (
@@ -1105,7 +1161,7 @@ export default function Answer({ onNavCode }) {
                   {activeChat === 'ai' && (
                     <>
                       {userName.toLowerCase() === 'bhargav' && (
-                        <button className="btn-icon" style={{color: '#ef4444'}} onClick={() => setDeleteOpen(true)} title="Erase All Data (Admin)"><i className="fa fa-bomb"></i></button>
+                        <button className="btn-icon" style={{ color: '#ef4444' }} onClick={() => setDeleteOpen(true)} title="Erase All Data (Admin)"><i className="fa fa-bomb"></i></button>
                       )}
                     </>
                   )}
@@ -1136,19 +1192,27 @@ export default function Answer({ onNavCode }) {
                   {sortedAiResponses.length === 0 && <div className="chat-placeholder"><h2>Chat with Meta AI</h2><p>Ask anything, attach images with `+`, or send stickers!</p></div>}
                   {sortedAiResponses.map(item => {
                     let imgs = [];
-                    try { if (item.images) imgs = typeof item.images === 'string' ? JSON.parse(item.images) : item.images; } catch (e) {}
+                    try { if (item.images) imgs = typeof item.images === 'string' ? JSON.parse(item.images) : item.images; } catch (e) { }
                     const isAudio = item.question_prompt?.startsWith('data:audio/');
                     return (
                       <div key={item.id} className="chat-block" id={`msg-ai-${item.id}`}>
                         <div className="msg right">
-                          {renderMessageContent(item.question_prompt || '', isAudio) !== item.question_prompt && !isAudio ? (
-                            renderMessageContent(item.question_prompt)
-                          ) : (
-                            <div className="bubble my-bubble">
-                              {isAudio ? renderMessageContent(item.question_prompt, true) : <p>{item.question_prompt}</p>}
-                              {imgs.length > 0 && <div className="bubble-gallery">{imgs.map((img, i) => <img key={i} src={img} alt="upload" onClick={() => setLightboxImg(img)} />)}</div>}
-                            </div>
-                          )}
+                          {(() => {
+                            const rendered = renderMessageContent(item.question_prompt || '', isAudio);
+                            const isBubbleFree = rendered.type === 'div' && rendered.props.className === 'sticker-img';
+                            return isBubbleFree ? rendered : (
+                              <div className="bubble my-bubble">
+                                {rendered}
+                                {imgs.length > 0 && (
+                                  <div className="bubble-gallery">
+                                    {imgs.map((img, i) => (
+                                      <img key={i} src={img} alt="upload" onClick={() => setLightboxImg(img)} />
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                         <div className="msg left">
                           <div className="bubble ai-bubble natural-chat">
@@ -1219,11 +1283,11 @@ export default function Answer({ onNavCode }) {
                 </div>
               )}
             </div>
-            
+
             {isScrolledUp && <button className="btn-scroll-bottom" onClick={scrollToBottom}>⬇</button>}
 
             <div className="chat-input-area glass-panel-inner">
-              
+
               {((activeChat === 'ai' && aiImages.length > 0) || (activeChat !== 'ai' && draftImages.length > 0)) && (
                 <div className="draft-images-tray">
                   {(activeChat === 'ai' ? aiImages : draftImages).map((img, idx) => (
@@ -1252,9 +1316,9 @@ export default function Answer({ onNavCode }) {
                   &#10133;
                   <input type="file" multiple accept="image/*" style={{ display: 'none' }} onChange={handleUniversalImageUpload} />
                 </label>
-                
+
                 <button className="btn-icon-large" title="Stickers" onClick={() => setShowStickers(!showStickers)}>&#128512;</button>
-                
+
                 {isRecording ? (
                   <div className="recording-bar">
                     <div className={`record-dot ${isPaused ? 'paused' : ''}`}></div>
@@ -1296,7 +1360,7 @@ export default function Answer({ onNavCode }) {
                   </button>
                 )}
 
-                <button 
+                <button
                   className="btn-send-message"
                   onClick={handleInterceptSend}
                   disabled={
@@ -1324,8 +1388,8 @@ export default function Answer({ onNavCode }) {
 
       {deferredPrompt && showInstallBanner && (
         <div className="cookie-toast">
-          <span style={{color: '#fff', fontSize: '0.9rem'}}>Install our App for a better experience!</span>
-          <div style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
+          <span style={{ color: '#fff', fontSize: '0.9rem' }}>Install our App for a better experience!</span>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <button className="btn-primary btn-small" onClick={handleInstallApp}>Install</button>
             <button className="btn-icon" onClick={() => setShowInstallBanner(false)}>&times;</button>
           </div>

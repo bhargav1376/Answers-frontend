@@ -86,7 +86,9 @@ body {
 }
 
 .brand-logo {
-  font-size: 1.5rem;
+  height: 28px;
+  width: 28px;
+  object-fit: contain;
   filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
 }
 
@@ -1385,4 +1387,191 @@ body {
     transform: scale(1.1);
     opacity: 1;
   }
+}
+
+/* Splash Screen Intro Animation Styles */
+.splash-container {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(circle at center, #0f172a 0%, #020617 100%);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 99999;
+  overflow: hidden;
+  transition: opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1), transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.splash-container.fade-out {
+  opacity: 0;
+  transform: scale(1.05);
+  pointer-events: none;
+}
+
+.splash-glow {
+  position: absolute;
+  width: 40vw;
+  height: 40vw;
+  border-radius: 50%;
+  filter: blur(120px);
+  opacity: 0.15;
+  pointer-events: none;
+  animation: floatGlow 10s infinite alternate ease-in-out;
+}
+
+.glow-blue {
+  background: #3b82f6;
+  top: 10%;
+  left: 15%;
+  animation-delay: 0s;
+}
+
+.glow-green {
+  background: #22c55e;
+  bottom: 10%;
+  right: 15%;
+  animation-delay: -3s;
+}
+
+.glow-orange {
+  background: #f97316;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  animation-delay: -6s;
+}
+
+@keyframes floatGlow {
+  0% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(5%, 10%) scale(1.2); }
+  100% { transform: translate(-5%, -5%) scale(0.9); }
+}
+
+.splash-logo-wrapper {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 240px;
+  height: 240px;
+  margin-bottom: 2rem;
+}
+
+.splash-logo {
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  box-shadow: 0 0 50px rgba(59, 130, 246, 0.3);
+  animation: logoIntro 1.2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  opacity: 0;
+  transform: scale(0.3) rotate(-30deg);
+  filter: blur(10px);
+}
+
+.splash-ring {
+  position: absolute;
+  width: 220px;
+  height: 220px;
+  border: 2px dashed rgba(59, 130, 246, 0.4);
+  border-radius: 50%;
+  animation: ringRotate 15s linear infinite, ringPulse 2s infinite alternate ease-in-out;
+}
+
+@keyframes logoIntro {
+  0% {
+    opacity: 0;
+    transform: scale(0.3) rotate(-30deg);
+    filter: blur(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+    filter: blur(0);
+  }
+}
+
+@keyframes ringRotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes ringPulse {
+  0% { transform: scale(0.95) rotate(0deg); opacity: 0.3; }
+  100% { transform: scale(1.05) rotate(30deg); opacity: 0.8; }
+}
+
+.splash-title {
+  font-family: 'Outfit', 'Inter', sans-serif;
+  color: #ffffff;
+  font-size: 2.8rem;
+  font-weight: 700;
+  margin: 0;
+  opacity: 0;
+  transform: translateY(20px);
+  animation: textSlideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.8s forwards;
+  letter-spacing: 1px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.splash-title span.letter-b {
+  letter-spacing: -3px;
+  color: #3b82f6;
+}
+
+.splash-title span.letter-a {
+  font-size: 3.4rem;
+  letter-spacing: -2px;
+  color: #22c55e;
+  margin-left: 2px;
+  text-shadow: 0 0 10px rgba(34, 197, 94, 0.5);
+}
+
+.splash-tagline {
+  color: #94a3b8;
+  font-size: 1rem;
+  margin-top: 0.5rem;
+  opacity: 0;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  animation: taglineFade 1s ease 1.5s forwards;
+}
+
+@keyframes textSlideUp {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes taglineFade {
+  to {
+    opacity: 1;
+    letter-spacing: 2px;
+  }
+}
+
+.splash-skip-btn {
+  position: absolute;
+  top: 2rem;
+  right: 2rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+  padding: 0.5rem 1rem;
+  border-radius: 9999px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-family: inherit;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+  z-index: 100000;
+}
+
+.splash-skip-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.2);
 }

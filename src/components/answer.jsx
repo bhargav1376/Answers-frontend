@@ -150,25 +150,30 @@ function SplashScreen({ onComplete }) {
   const [isFadingOut, setIsFadingOut] = useState(false);
 
   useEffect(() => {
-    const fadeTimer = setTimeout(() => {
+    if (isFadingOut) {
+      const timer = setTimeout(() => {
+        onComplete();
+      }, 400); // 0.4s matching the fade transition duration in CSS
+      return () => clearTimeout(timer);
+    }
+  }, [isFadingOut, onComplete]);
+
+  // Fallback timer to ensure the splash screen closes even if onAnimationEnd doesn't trigger
+  useEffect(() => {
+    const fallbackTimer = setTimeout(() => {
       setIsFadingOut(true);
-    }, 2700);
-
-    const completeTimer = setTimeout(() => {
-      onComplete();
-    }, 3500);
-
-    return () => {
-      clearTimeout(fadeTimer);
-      clearTimeout(completeTimer);
-    };
-  }, [onComplete]);
+    }, 2800);
+    return () => clearTimeout(fallbackTimer);
+  }, []);
 
   const handleSkip = () => {
     setIsFadingOut(true);
-    setTimeout(() => {
-      onComplete();
-    }, 500);
+  };
+
+  const handleAnimationEnd = (e) => {
+    if (e.animationName === 'taglineFade') {
+      setIsFadingOut(true);
+    }
   };
 
   return (
@@ -193,7 +198,9 @@ function SplashScreen({ onComplete }) {
       <h1 className="splash-title">
         The <span className="letter-b">B</span> <span className="letter-a">A</span> Chat
       </h1>
-      <p className="splash-tagline">Connect. Collaborate. Smile.</p>
+      <p className="splash-tagline" onAnimationEnd={handleAnimationEnd}>
+        Connect. Collaborate. Smile.
+      </p>
     </div>
   );
 }
